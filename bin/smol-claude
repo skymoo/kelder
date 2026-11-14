@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Adam Mercer
+# Run Claude Code in the smolvm guest with one host directory attached.
+#   smol-claude [-C DIR] [claude args...]      DIR defaults to the current directory
+#
+# DIR is attached at the same path it has on the host and detached when the
+# last session using it exits. Only one directory is attached at a time, so
+# Claude never sees another project; a second session for a different
+# directory is refused (use VM=<name> to run it in a separate machine).
+set -euo pipefail
+# lib/ and guest/ sit next to bin/ in a checkout and in share/smol-claude when
+# installed (make install).
+root="$(dirname "$(realpath "${BASH_SOURCE[0]}")")/.."
+[[ -f $root/lib/smol.sh ]] || root=$root/share/smol-claude
+# shellcheck source=SCRIPTDIR/../lib/smol.sh
+source "$root/lib/smol.sh"
+
+dir=.
+if [[ ${1:-} == -C ]]; then
+  [[ $# -ge 2 ]] || die "-C needs a directory"
+  dir=$2
+  shift 2
+fi
+[[ -d $dir ]] || die "not a directory: $dir"
+dir=$(realpath "$dir")
+[[ $dir != / && $dir != "$(realpath "$HOME")" ]] || die "won't attach $dir; run smol-claude from a project directory"
+[[ $dir != *:* ]] || die "can't attach a path containing ':'"
+state_real=$(realpath -m "$CLAUDE_STATE")
+[[ $dir/ != "$state_real"/* && $state_real/ != "$dir"/* ]] || die "won't attach $dir: it overlaps Claude's state directory $state_real"
+
+vm_exists || die "machine '$VM' does not exist; run smol-claude-setup first"
+# Start before opening any lock files, so the VM process can't inherit them.
+vm_start
+
+# --- attachment bookkeeping --------------------------------------------------
+# Each attached directory has <key>.path (its path) and <key>.lock, which every
+# session using it holds a shared lock on. A lock nobody holds means the
+# sessions are gone and the directory can be detached. .lock serializes all of
+# this between concurrent smol-claude runs.
+state="${XDG_RUNTIME_DIR:-$HOME/.cache}/smol-claude/$VM"
+mkdir -p "$state"
+key=$(printf %s "$dir" | sha256sum | cut -c1-16)
+
+# Detach directories no session is using. With --only-free, stop there;
+# otherwise also fail if a different directory is still in use.
+sweep() {
+  local f k other l
+  for f in "$state"/*.path; do
+    [[ -e $f ]] || continue
+    k=${f%.path}
+    other=$(<"$f")
+    exec {l}>"$k.lock"
+    if flock -n -x "$l"; then
+      if vm_attached "$other" {l}>&-; then vm_detach "$other" {l}>&-; fi
+      rm -f "$f" "$k.lock"
+    elif [[ ${1:-} != --only-free && $other != "$dir" ]]; then
+      exec {l}>&-
+      die "another smol-claude session is using $other; only one directory can be attached at a time (use VM=<name> for another machine)"
+    fi
+    exec {l}>&-
+  done
+}
+
+exec {glock}>"$state/.lock"
+flock "$glock"
+sweep
+if ! vm_attached "$dir"; then
+  vm_attach "$dir" {glock}>&-
+fi
+printf %s "$dir" >"$state/$key.path"
+exec {mylock}>"$state/$key.lock"
+flock -s "$mylock"
+flock -u "$glock"
+
+# shellcheck disable=SC2317  # called from the EXIT trap
+cleanup() {
+  exec {mylock}>&-
+  flock "$glock"
+  sweep --only-free
+  flock -u "$glock"
+}
+trap cleanup EXIT
+# Let Ctrl-C reach Claude; smol-claude itself keeps going so cleanup still runs.
+trap : INT
+
+# --- run Claude --------------------------------------------------------------
+# Only ask for a TTY when there is one, so `smol-claude -p ... | less` and scripts work.
+flags=(-i)
+[[ -t 0 && -t 1 ]] && flags+=(-t)
+
+rc=0
+# shellcheck disable=SC2016  # the script expands in the guest
+smolvm machine exec --name "$VM" "${flags[@]}" -- bash -c '
+  dir=$1 state=$2; shift 2
+  mountpoint -q "$dir" || { echo "smol-claude: $dir is not attached in the guest" >&2; exit 1; }
+  mountpoint -q "$state" || { echo "smol-claude: Claude state directory is not mounted at $state; run smol-claude-setup" >&2; exit 1; }
+  cd "$dir"
+  export PATH="$HOME/.local/bin:$PATH" CLAUDE_CONFIG_DIR=$state
+  command -v claude >/dev/null || { echo "smol-claude: claude is not installed in the guest; run smol-claude-setup" >&2; exit 127; }
+  exec claude "$@"' _ "$dir" "$GUEST_CLAUDE_STATE" "$@" {glock}>&- {mylock}>&- || rc=$?
+exit "$rc"

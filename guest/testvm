@@ -1,0 +1,380 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Adam Mercer
+"""testvm: throwaway QEMU/KVM virtual machines for testing.
+
+  testvm run [opts] -- CMD...      boot a fresh VM, run CMD as root, destroy it
+  testvm up NAME [opts]            boot a VM and leave it running
+  testvm ssh NAME [-- CMD...]      shell (or command) in a running VM
+  testvm cp SRC... DEST            copy files with scp; write VM paths as NAME:PATH
+  testvm down NAME... | --all      stop and delete VMs
+  testvm ls                        list VMs
+  testvm images                    list base images
+  testvm pull IMAGE [--refresh]    download a base image
+
+opts: --image debian-13 --cpus 2 --mem 2048 --disk 10G -p HOSTPORT:GUESTPORT
+
+Each VM boots from a copy-on-write disk on top of a cached cloud image, so it
+always starts clean. cloud-init installs a generated SSH key for root.
+A single CMD argument is run by the remote shell ('apt update && ...');
+several are quoted and run as one command (ls -l "a b").
+"""
+import argparse, fcntl, hashlib, json, os, secrets, shlex, shutil, signal
+import socket, subprocess, sys, time, urllib.request
+from pathlib import Path
+
+IMAGES = {
+    # name: (url, checksum file in the same directory, hash)
+    "almalinux-10": ("https://repo.almalinux.org/almalinux/10/cloud/x86_64/images/AlmaLinux-10-GenericCloud-latest.x86_64.qcow2", "CHECKSUM", "sha256"),
+    "debian-12": ("https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-amd64.qcow2", "SHA512SUMS", "sha512"),
+    "debian-13": ("https://cloud.debian.org/images/cloud/trixie/latest/debian-13-genericcloud-amd64.qcow2", "SHA512SUMS", "sha512"),
+}
+DEFAULT_IMAGE = "debian-13"
+HOME = Path.home()
+CACHE = Path(os.environ.get("TESTVM_CACHE", HOME / ".cache/testvm"))
+STATE = Path(os.environ.get("TESTVM_STATE", HOME / ".local/state/testvm"))
+KEY = CACHE / "id_ed25519"
+SSH_OPTS = ["-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
+            "-o", "LogLevel=ERROR", "-o", "IdentitiesOnly=yes", "-i", str(KEY)]
+# Boot with UEFI: under smolvm's nested KVM, BIOS GRUB resets the VM the moment
+# it jumps into the kernel, while OVMF boots the same image fine.
+OVMF_CODE = Path("/usr/share/OVMF/OVMF_CODE_4M.fd")
+OVMF_VARS = Path("/usr/share/OVMF/OVMF_VARS_4M.fd")
+BOOT_TIMEOUT = int(os.environ.get("TESTVM_BOOT_TIMEOUT", "300"))
+
+
+class Fail(Exception):
+    pass
+
+
+def log(msg):
+    print(f"testvm: {msg}", file=sys.stderr, flush=True)
+
+
+def sh(*cmd, **kw):
+    return subprocess.run(cmd, check=True, **kw)
+
+
+# --- images ------------------------------------------------------------------
+
+def image_path(name):
+    if name not in IMAGES:
+        raise Fail(f"unknown image {name!r}; choose from: {', '.join(IMAGES)}")
+    return CACHE / "images" / f"{name}.qcow2"
+
+
+def pull(name, refresh=False):
+    dest = image_path(name)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    # Lock so parallel runs don't download the same image twice.
+    with open(dest.with_suffix(".lock"), "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if dest.exists() and not refresh:
+            return dest
+        url, sums_name, algo = IMAGES[name]
+        base, fname = url.rsplit("/", 1)
+        with urllib.request.urlopen(f"{base}/{sums_name}", timeout=30) as r:
+            sums = r.read().decode()
+        want = next((ln.split()[0] for ln in sums.splitlines()
+                     if ln.split() and ln.split()[-1].lstrip("*") == fname), None)
+        if not want:
+            raise Fail(f"{fname} not listed in {base}/{sums_name}")
+        tmp = dest.with_suffix(".part")
+        h, done, shown = hashlib.new(algo), 0, -1
+        log(f"downloading {name} from {url}")
+        with urllib.request.urlopen(url, timeout=60) as r, open(tmp, "wb") as f:
+            total = int(r.headers.get("Content-Length") or 0)
+            while chunk := r.read(1 << 20):
+                f.write(chunk)
+                h.update(chunk)
+                done += len(chunk)
+                pct = done * 100 // total if total else -1
+                if pct >= 0 and pct // 10 != shown:
+                    shown = pct // 10
+                    log(f"  {pct}% of {total >> 20} MiB")
+        if h.hexdigest() != want:
+            tmp.unlink()
+            raise Fail(f"checksum mismatch for {name}; download discarded")
+        os.replace(tmp, dest)
+        return dest
+
+
+def ensure_key():
+    if not KEY.exists():
+        KEY.parent.mkdir(parents=True, exist_ok=True)
+        sh("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "testvm", "-f", str(KEY))
+
+
+# --- VM state ----------------------------------------------------------------
+
+def vm_dir(name):
+    return STATE / name
+
+
+def load(name):
+    try:
+        return json.loads((vm_dir(name) / "vm.json").read_text())
+    except FileNotFoundError:
+        raise Fail(f"no VM named {name!r}") from None
+
+
+def qemu_pid(name):
+    """PID of the VM's QEMU process, or None if it isn't running."""
+    try:
+        pid = int((vm_dir(name) / "qemu.pid").read_text())
+        cmdline = Path(f"/proc/{pid}/cmdline").read_bytes()
+    except (FileNotFoundError, ValueError):
+        return None
+    # Guard against a recycled PID belonging to something else.
+    return pid if str(vm_dir(name)).encode() in cmdline else None
+
+
+def free_port():
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def ssh_cmd(vm, tty=False):
+    return ["ssh", *SSH_OPTS, "-p", str(vm["port"]), *(["-t"] if tty else []), "root@127.0.0.1"]
+
+
+def remote(cmd):
+    """One argument goes to the remote shell as is; several are quoted."""
+    return cmd[0] if len(cmd) == 1 else shlex.join(cmd)
+
+
+def console_tail(name, n=30):
+    try:
+        lines = (vm_dir(name) / "console.log").read_text(errors="replace").splitlines()
+        return "\n".join(lines[-n:])
+    except FileNotFoundError:
+        return "(no console output)"
+
+
+# --- commands ----------------------------------------------------------------
+
+def up(name, image, cpus, mem, disk, forwards):
+    d = vm_dir(name)
+    if d.exists():
+        if qemu_pid(name):
+            raise Fail(f"VM {name!r} is already running")
+        shutil.rmtree(d)  # leftover from a crashed VM
+    base = pull(image)
+    ensure_key()
+    if not OVMF_CODE.exists():
+        raise Fail(f"{OVMF_CODE} not found; install the ovmf package")
+    d.mkdir(parents=True)
+    shutil.copy(OVMF_VARS, d / "efivars.fd")
+    sh("qemu-img", "create", "-q", "-f", "qcow2", "-F", "qcow2", "-b", str(base),
+       str(d / "disk.qcow2"), disk)
+    pubkey = KEY.with_suffix(".pub").read_text().strip()
+    (d / "user-data").write_text(
+        "#cloud-config\n"
+        "disable_root: false\n"
+        f"ssh_authorized_keys: [{json.dumps(pubkey)}]\n")
+    (d / "meta-data").write_text(f"instance-id: {name}-{secrets.token_hex(4)}\nlocal-hostname: {name}\n")
+    sh("genisoimage", "-quiet", "-output", str(d / "seed.iso"), "-volid", "cidata",
+       "-joliet", "-rock", str(d / "user-data"), str(d / "meta-data"))
+
+    for attempt in range(3):  # retry if another VM grabs the same port first
+        port = free_port()
+        fwd = [f"hostfwd=tcp:127.0.0.1:{port}-:22"]
+        fwd += [f"hostfwd=tcp:127.0.0.1:{h}-:{g}" for h, g in (f.split(":") for f in forwards)]
+        proc = subprocess.run([
+            "qemu-system-x86_64", "-name", name, "-machine", "q35,accel=kvm", "-cpu", "host",
+            "-smp", str(cpus), "-m", str(mem), "-nodefaults", "-display", "none",
+            "-serial", f"file:{d / 'console.log'}",
+            "-drive", f"if=pflash,format=raw,readonly=on,file={OVMF_CODE}",
+            "-drive", f"if=pflash,format=raw,file={d / 'efivars.fd'}",
+            "-drive", f"if=virtio,file={d / 'disk.qcow2'},format=qcow2",
+            "-drive", f"if=virtio,file={d / 'seed.iso'},format=raw,readonly=on",
+            "-netdev", ",".join(["user,id=n0", *fwd]), "-device", "virtio-net-pci,netdev=n0",
+            "-device", "virtio-rng-pci", "-daemonize", "-pidfile", str(d / "qemu.pid"),
+        ], capture_output=True, text=True)
+        if proc.returncode == 0:
+            break
+        if "hostfwd" not in proc.stderr or attempt == 2:
+            raise Fail(f"QEMU failed to start:\n{proc.stderr.strip()}")
+    vm = {"name": name, "image": image, "port": port, "forwards": forwards, "created": int(time.time())}
+    (d / "vm.json").write_text(json.dumps(vm))
+
+    # Wait for SSH, then for cloud-init so tests don't race its first-boot work.
+    deadline = time.monotonic() + BOOT_TIMEOUT
+    while True:
+        if not qemu_pid(name):
+            raise Fail(f"VM {name!r} died while booting. Console:\n{console_tail(name)}")
+        r = subprocess.run([*ssh_cmd(vm), "-o", "ConnectTimeout=3", "-o", "BatchMode=yes",
+                            "cloud-init status --wait >/dev/null 2>&1; true"],
+                           stdin=subprocess.DEVNULL, capture_output=True)
+        if r.returncode == 0:
+            return vm
+        if time.monotonic() > deadline:
+            raise Fail(f"VM {name!r} not reachable over SSH after {BOOT_TIMEOUT}s. Console:\n{console_tail(name)}")
+        time.sleep(1)
+
+
+def down(name):
+    pid = qemu_pid(name)
+    if pid:
+        os.kill(pid, signal.SIGTERM)
+        for _ in range(50):
+            if not qemu_pid(name):
+                break
+            time.sleep(0.1)
+        else:
+            os.kill(pid, signal.SIGKILL)
+    shutil.rmtree(vm_dir(name), ignore_errors=True)
+
+
+def all_vms():
+    return sorted(p.name for p in STATE.iterdir() if p.is_dir()) if STATE.exists() else []
+
+
+def cmd_run(a):
+    name = a.name or f"run-{secrets.token_hex(3)}"
+    try:
+        log(f"booting {name} ({a.image})")
+        vm = up(name, a.image, a.cpus, a.mem, a.disk, a.forward)
+        cmd = a.cmd or ["bash", "-l"]
+        tty = not a.cmd and sys.stdin.isatty()
+        return subprocess.run([*ssh_cmd(vm, tty), remote(cmd)]).returncode
+    finally:
+        if a.keep:
+            log(f"kept VM {name}; remove it with: testvm down {name}")
+        else:
+            down(name)
+
+
+def cmd_up(a):
+    vm = up(a.name, a.image, a.cpus, a.mem, a.disk, a.forward)
+    log(f"{a.name} is up (ssh port {vm['port']}); connect with: testvm ssh {a.name}")
+
+
+def cmd_ssh(a):
+    vm = load(a.name)
+    if not qemu_pid(a.name):
+        raise Fail(f"VM {a.name!r} is not running")
+    tty = not a.cmd and sys.stdin.isatty()
+    return subprocess.run([*ssh_cmd(vm, tty), *([remote(a.cmd)] if a.cmd else [])]).returncode
+
+
+def cmd_cp(a):
+    port, args = None, []
+    for p in a.paths:
+        head, sep, tail = p.partition(":")
+        if sep and "/" not in head and vm_dir(head).exists():
+            vm = load(head)
+            if port not in (None, vm["port"]):
+                raise Fail("cp works with one VM at a time")
+            port = vm["port"]
+            args.append(f"root@127.0.0.1:{tail}")
+        else:
+            args.append(p)
+    if port is None:
+        raise Fail("no VM path given; write VM paths as NAME:PATH")
+    return subprocess.run(["scp", *SSH_OPTS, "-P", str(port), "-r", *args]).returncode
+
+
+def cmd_down(a):
+    names = all_vms() if a.all else a.names
+    if not names:
+        raise Fail("give VM names or --all")
+    for n in names:
+        if not vm_dir(n).exists():
+            raise Fail(f"no VM named {n!r}")
+        down(n)
+
+
+def cmd_ls(a):
+    print(f"{'NAME':16} {'STATE':8} {'IMAGE':14} {'SSH':6} {'AGE':>6}  FORWARDS")
+    for n in all_vms():
+        try:
+            vm = load(n)
+        except (Fail, ValueError):
+            print(f"{n:16} broken")
+            continue
+        age = int(time.time() - vm["created"])
+        age_s = f"{age // 3600}h" if age >= 3600 else f"{age // 60}m"
+        state = "running" if qemu_pid(n) else "dead"
+        print(f"{n:16} {state:8} {vm['image']:14} {vm['port']:<6} {age_s:>6}  {' '.join(vm['forwards'])}")
+
+
+def cmd_images(a):
+    for name in IMAGES:
+        p = image_path(name)
+        size = f"{p.stat().st_size >> 20} MiB cached" if p.exists() else "not downloaded"
+        print(f"{name:14} {size}{'  (default)' if name == DEFAULT_IMAGE else ''}")
+
+
+def cmd_pull(a):
+    log(f"{a.image} ready at {pull(a.image, a.refresh)}")
+
+
+def main():
+    p = argparse.ArgumentParser(prog="testvm", description=__doc__.split("\n")[0],
+                                epilog=__doc__.split("\n", 2)[2], formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = p.add_subparsers(dest="command", required=True)
+
+    def vm_opts(sp):
+        sp.add_argument("--image", default=DEFAULT_IMAGE, choices=IMAGES)
+        sp.add_argument("--cpus", type=int, default=2)
+        sp.add_argument("--mem", type=int, default=2048, help="MiB")
+        sp.add_argument("--disk", default="10G")
+        sp.add_argument("-p", "--forward", action="append", default=[], metavar="HOST:GUEST",
+                        help="forward 127.0.0.1:HOST to the VM's TCP port GUEST")
+
+    sp = sub.add_parser("run", help="boot a fresh VM, run a command, destroy it")
+    vm_opts(sp)
+    sp.add_argument("--name")
+    sp.add_argument("--keep", action="store_true", help="leave the VM running afterwards")
+    sp.add_argument("cmd", nargs=argparse.REMAINDER)
+    sp.set_defaults(fn=cmd_run)
+
+    sp = sub.add_parser("up", help="boot a VM and leave it running")
+    sp.add_argument("name")
+    vm_opts(sp)
+    sp.set_defaults(fn=cmd_up)
+
+    sp = sub.add_parser("ssh", help="shell or command in a running VM")
+    sp.add_argument("name")
+    sp.add_argument("cmd", nargs=argparse.REMAINDER)
+    sp.set_defaults(fn=cmd_ssh)
+
+    sp = sub.add_parser("cp", help="copy files to or from a VM (NAME:PATH)")
+    sp.add_argument("paths", nargs="+")
+    sp.set_defaults(fn=cmd_cp)
+
+    sp = sub.add_parser("down", help="stop and delete VMs")
+    sp.add_argument("names", nargs="*")
+    sp.add_argument("--all", action="store_true")
+    sp.set_defaults(fn=cmd_down)
+
+    sub.add_parser("ls", help="list VMs").set_defaults(fn=cmd_ls)
+    sub.add_parser("images", help="list base images").set_defaults(fn=cmd_images)
+    sp = sub.add_parser("pull", help="download a base image")
+    sp.add_argument("image", choices=IMAGES)
+    sp.add_argument("--refresh", action="store_true")
+    sp.set_defaults(fn=cmd_pull)
+
+    a = p.parse_args()
+    if getattr(a, "cmd", None) and a.cmd[0] == "--":
+        a.cmd = a.cmd[1:]
+    if getattr(a, "name", None) and ("/" in a.name or a.name.startswith(".")):
+        raise Fail("VM names can't contain '/' or start with '.'")
+    # Turn SIGTERM into a normal exit so `finally` blocks clean up VMs.
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
+    return a.fn(a) or 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except Fail as e:
+        log(str(e))
+        sys.exit(1)
+    except subprocess.CalledProcessError as e:
+        log(f"command failed ({e.returncode}): {shlex.join(map(str, e.cmd))}")
+        sys.exit(1)
+    except KeyboardInterrupt:
+        sys.exit(130)
