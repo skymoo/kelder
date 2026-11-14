@@ -35,9 +35,6 @@ smol-claude -C ~/git/other                   # or name the directory
 smol-claude -p "run the tests" | less        # non-interactive works too
 ```
 
-The commands aren't called `cc` because that would shadow the C compiler; add
-`alias cc=smol-claude` in your shell if you want the short name interactively.
-
 One persistent machine serves every project. `smol-claude` attaches the
 directory to the running machine (`smolvm machine mount add`) at the same path
 it has on the host, and detaches it when the last session using it exits. Only
