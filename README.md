@@ -130,9 +130,11 @@ container DNS broke (apt: "Temporary failure resolving"). The
 containers (QUIC, statsd, syslog) may need `--network host`. This is a libkrun
 bug, worth reporting upstream.
 
-**Unverified smolvm assumptions** (all in `lib/smol.sh`): `machine status`
-fails only for unknown machines; `machine start` on a running machine either
-succeeds or fails harmlessly; `machine exec` takes `-i`/`-t` separately.
+**smolvm behaviour relied on** (checked against the v1.34.4 source): `machine
+status` exits 0 for a running or stopped machine and fails for an unknown one
+(an unreadable state database is also reported as not found); `machine start`
+on a running machine prints "already running" and succeeds, and fails for a
+paused one; `machine exec` takes `-i` and `-t` as separate flags.
 
 ## License
 

@@ -20,15 +20,16 @@ command -v smolvm >/dev/null 2>&1 || die "smolvm not found on PATH"
 guest() { smolvm machine exec --name "$VM" -- "$@"; }
 
 # Succeeds if the machine exists, running or not.
-# ASSUMPTION: `smolvm machine status` exits non-zero only for an unknown machine.
+# `smolvm machine status` exits 0 for a running or stopped machine and fails
+# for an unknown one (checked against the smolvm v1.34.4 source).
 vm_exists() { smolvm machine status --name "$VM" >/dev/null 2>&1; }
 
 # Start the machine if needed, then wait until it accepts exec.
 vm_start() {
   local out
   if ! out=$(smolvm machine start --name "$VM" 2>&1); then
-    # Starting a machine that is already running may fail; that's fine as long
-    # as it answers. Anything else is a real error, so show it.
+    # Starting a running machine succeeds; a paused one fails. Accept a failure
+    # as long as the machine answers, otherwise show smolvm's error.
     guest true >/dev/null 2>&1 || die "could not start machine '$VM':"$'\n'"$out"
   fi
   for _ in {1..30}; do
