@@ -22,6 +22,7 @@ bin/smol-claude             host: attach project directories and run claude in t
 lib/smol.sh                 host: shared helpers; every smolvm CLI assumption lives here
 lib/setup.sh                host: create and provision the guest (smol-claude self setup)
 guest/testvm                guest: throwaway QEMU/KVM VMs (installed to /usr/local/bin)
+guest/smoketest             guest: checks smolvm behaviour after an upgrade (installed to /usr/local/bin)
 guest/containers-tsi.conf   guest: podman DNS workaround (see below)
 ```
 
@@ -108,6 +109,19 @@ testvm up web -p 8080:80 && testvm ssh web                   # keep one around
 testvm cp ./build web:/opt/ && testvm down web
 podman run --rm docker.io/library/debian:trixie ...          # use full image names
 ```
+
+## Testing a smolvm upgrade
+
+Exit every smol-claude session so `smol` is stopped, upgrade smolvm, then run
+`make smoketest` in this checkout. It creates a throwaway `smol-test` machine,
+runs `guest/smoketest` in it with the checkout attached, checks the smolvm
+behaviour relied on (see below) from the host, and deletes the machine if
+everything passed. FAIL means the upgrade broke something smol-claude needs;
+KNOWN is a smolvm bug the guest config works around; CHANGED means that bug
+is gone and its workaround may be removable.
+
+A machine that fails is kept for inspection. If `smol` itself stops starting
+after an upgrade, keep it too and create the replacement under another name.
 
 ## Development
 

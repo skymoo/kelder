@@ -96,6 +96,7 @@ install_file() {  # SRC DEST MODE
 }
 install_file "$root/guest/containers-tsi.conf" /etc/containers/containers.conf.d/50-smolvm-tsi.conf 644
 install_file "$root/guest/testvm" /usr/local/bin/testvm 755
+install_file "$root/guest/smoketest" /usr/local/bin/smoketest 755
 
 # --- Claude Code -------------------------------------------------------------
 # shellcheck disable=SC2016  # $HOME is the guest's

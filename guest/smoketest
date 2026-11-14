@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Adam Mercer
+#
+# smoketest: check, from inside the guest, the smolvm behaviours smol-claude
+# relies on. Run it in a throwaway machine after upgrading smolvm:
+#
+#   VM=smol-test smol-claude self setup
+#   VM=smol-test smol-claude     then, in that session: smoketest [DIR]
+#
+# DIR is an attached host directory (default: the current directory).
+# PASS/FAIL lines are behaviour smol-claude needs; KNOWN lines are smolvm bugs
+# the guest config works around; CHANGED lines mean a known bug is gone and its
+# workaround may be removable. Exits non-zero if anything FAILs.
+set -uo pipefail
+
+dir=${1:-$PWD}
+image=docker.io/library/python:3-slim
+fails=0
+pass()    { printf 'PASS     %s\n' "$1"; }
+fail()    { printf 'FAIL     %s\n' "$1"; fails=$((fails + 1)); }
+known()   { printf 'KNOWN    %s\n' "$1"; }
+changed() { printf 'CHANGED  %s\n' "$1"; }
+
+# --- users -------------------------------------------------------------------
+uid=$(id -u)
+if [[ $uid == 0 ]]; then pass "exec session runs as root"
+else fail "exec session runs as uid $uid, expected 0"; fi
+
+pid1=$(ps -o uid= -p 1 | tr -d ' ')
+if [[ $pid1 == 0 ]]; then pass "PID 1 runs as root"
+else fail "PID 1 runs as uid $pid1, expected 0"; fi
+
+# --- attached directory ownership --------------------------------------------
+if ! tmp=$(mktemp -p "$dir" .smoketest.XXXXXX); then
+  fail "cannot create a file in $dir"
+else
+  owner=$(stat -c %u "$dir")
+  got=$(stat -c %u "$tmp")
+  if [[ $got == "$owner" ]]; then
+    rm -f "$tmp"
+    pass "files root creates in $dir belong to uid $owner, the directory's owner"
+  else
+    fail "files root creates in $dir belong to uid $got, the directory belongs to uid $owner (kept $tmp)"
+  fi
+fi
+
+# --- containers --------------------------------------------------------------
+if ! podman pull -q "$image" >/dev/null; then
+  fail "cannot pull $image; container checks skipped"
+else
+  # A connected UDP socket in a container netns fails on its 2nd send (EINVAL).
+  udp='import socket
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+s.connect(("1.1.1.1", 53))
+try:
+    s.send(b"x"); s.send(b"x"); print("ok")
+except OSError as e:
+    print(e.errno)'
+  r=$(podman run --rm "$image" python3 -c "$udp" 2>&1)
+  case $r in
+    ok) changed "connected UDP in containers works; the TSI bug may be fixed" ;;
+    22) known "connected UDP in containers fails on the 2nd send (EINVAL)" ;;
+    *)  fail "container UDP check gave: $r" ;;
+  esac
+
+  if podman run --rm "$image" getent ahosts deb.debian.org >/dev/null; then
+    pass "container DNS resolves with containers-tsi.conf"
+  else
+    fail "container DNS fails even with containers-tsi.conf"
+  fi
+
+  override=$(mktemp)
+  printf '[containers]\ndns_options = []\n' >"$override"
+  if CONTAINERS_CONF_OVERRIDE=$override podman run --rm "$image" \
+       getent ahosts deb.debian.org >/dev/null; then
+    changed "container DNS works without single-request-reopen; containers-tsi.conf may be removable"
+  else
+    known "container DNS fails without single-request-reopen"
+  fi
+  rm -f "$override"
+fi
+
+# --- nested VMs --------------------------------------------------------------
+if testvm run -- true; then pass "testvm boots a nested VM"
+else fail "testvm cannot boot a nested VM"; fi
+
+echo
+if ((fails)); then echo "$fails check(s) failed"; exit 1; fi
+echo "all checks passed"
