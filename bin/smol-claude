@@ -73,7 +73,7 @@ exec {mylock}>"$state/$key.lock"
 flock -s "$mylock"
 flock -u "$glock"
 
-# shellcheck disable=SC2317  # called from the EXIT trap
+# shellcheck disable=SC2317,SC2329  # called from the EXIT trap
 cleanup() {
   exec {mylock}>&-
   flock "$glock"
