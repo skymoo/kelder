@@ -98,6 +98,23 @@ install_file "$root/guest/containers-tsi.conf" /etc/containers/containers.conf.d
 install_file "$root/guest/testvm" /usr/local/bin/testvm 755
 install_file "$root/guest/smoketest" /usr/local/bin/smoketest 755
 
+# Match the host's timezone. timedatectl first; /etc/localtime's target as a
+# fallback for hosts without systemd.
+host_tz=$(timedatectl show -p Timezone --value 2>/dev/null || true)
+if [[ -z $host_tz ]]; then
+  host_tz=$(readlink /etc/localtime 2>/dev/null || true)
+  host_tz=${host_tz#*zoneinfo/}
+fi
+if [[ -n $host_tz ]]; then
+  echo "Setting the guest timezone to $host_tz..."
+  # shellcheck disable=SC2016  # $1 expands in the guest
+  guest "${asroot[@]}" bash -c 'test -e "/usr/share/zoneinfo/$1" &&
+    ln -sf "/usr/share/zoneinfo/$1" /etc/localtime && echo "$1" >/etc/timezone' _ "$host_tz" ||
+    echo "warning: could not set the guest timezone to $host_tz; leaving it unchanged" >&2
+else
+  echo "warning: could not work out the host timezone; the guest stays on its default" >&2
+fi
+
 # --- Claude Code -------------------------------------------------------------
 # shellcheck disable=SC2016  # $HOME is the guest's
 claude_installed() { guest bash -c 'test -x "$HOME/.local/bin/claude"'; }
