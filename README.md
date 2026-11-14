@@ -35,6 +35,27 @@ smol-claude -C ~/git/other                   # or name the directory
 smol-claude -p "run the tests" | less        # non-interactive works too
 ```
 
+```text
+smol-claude [-C DIR] [CLAUDE_ARGS...]
+```
+
+`smol-claude` itself takes one option:
+
+- `-C DIR`: attach and start Claude in `DIR` instead of the current
+  directory. It must come first; anywhere else it is passed to `claude`.
+
+Everything else is passed unchanged to `claude` in the guest, so `-p`,
+`--resume`, `--continue`, `--model` and the rest are Claude Code's own
+options (see `smol-claude --help`, which shows `claude --help`).
+
+These environment variables set by the host also change how it behaves:
+
+- `VM=<name>`: the smolvm machine to use (default `smol`); also read by
+  `smol-claude-setup`.
+- `CLAUDE_STATE=<dir>`: where Claude's state lives on the host (default
+  `~/.local/share/smol-claude/claude`).
+- `IMAGE=<image>`: base image for `smol-claude-setup` (default `debian`).
+
 One persistent machine serves every project. `smol-claude` attaches the
 directory to the running machine (`smolvm machine mount add`) at the same path
 it has on the host, and detaches it when the last session using it exits. Only
