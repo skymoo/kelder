@@ -107,8 +107,6 @@ for d in "${extra[@]}"; do
 done
 
 vm_exists || die "machine '$VM' does not exist; run 'smol-claude self setup' first"
-# Start before opening any lock files, so the VM process can't inherit them.
-vm_start
 
 # --- attachment bookkeeping --------------------------------------------------
 # Each attached directory has <key>.path (its path) and <key>.lock, which every
@@ -151,6 +149,10 @@ sweep() {
 
 exec {glock}>"$state/.lock"
 flock "$glock"
+# Start the machine under the lock, so an exiting session can't stop it
+# between here and the attach. Close the lock for it, so the VM process
+# doesn't inherit it.
+vm_start {glock}>&-
 sweep
 for d in "${dirs[@]}"; do
   if ! vm_attached "$d"; then
@@ -177,6 +179,10 @@ cleanup() {
   for fd in "${mylocks[@]}"; do exec {fd}>&-; done
   flock "$glock"
   sweep --only-free
+  # Stop the machine once no session is using it.
+  if ! compgen -G "$state/*.path" >/dev/null; then
+    vm_stop {glock}>&- || echo "smol-claude: could not stop machine '$VM'" >&2
+  fi
   flock -u "$glock"
 }
 trap cleanup EXIT

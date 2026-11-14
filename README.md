@@ -74,13 +74,17 @@ These environment variables set by the host also change how it behaves:
   `~/.local/share/smol-claude/claude`).
 - `IMAGE=<image>`: base image for `smol-claude self setup` (default `debian`).
 
-One persistent machine serves every project. `smol-claude` attaches each
-directory to the running machine (`smolvm machine mount add`) at the same path
+One machine serves every project. `smol-claude` starts it if needed and
+attaches each directory to it (`smolvm machine mount add`) at the same path
 it has on the host, and detaches it when the last session using it exits. Only
 one set of directories is attached at a time: a session for a different set is
 refused while another is open, since mounts are visible machine-wide (use
 `VM=<name>` for a second machine). A session that crashes leaves its
 directories attached until the next run cleans them up.
+
+When the last session exits, `smol-claude` stops the machine, so anything
+left running in it (`testvm` VMs, containers) stops too. The next session
+boots it again.
 
 Claude's state (login, settings, history, memory) is kept on the host in
 `~/.local/share/smol-claude/claude` (override with `CLAUDE_STATE`), mounted at

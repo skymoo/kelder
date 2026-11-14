@@ -38,6 +38,8 @@ vm_start() {
   die "machine '$VM' started but did not answer exec within 30s"
 }
 
+vm_stop() { smolvm machine stop --name "$VM" >/dev/null; }
+
 # Host directories are attached to the running machine at the same path they
 # have on the host (`machine mount`, smolvm 1.32+). Attachments last until the
 # machine stops.
