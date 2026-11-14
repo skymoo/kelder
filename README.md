@@ -51,6 +51,14 @@ Claude's state (login, settings, history, memory) is kept on the host in
 The machine itself is disposable: delete it and run `smol-claude-setup` to
 rebuild, and nothing is lost. Changing `IMAGE` works the same way.
 
+Arguments go straight to `claude`, so sessions resume as usual. When Claude
+exits it suggests `claude --resume <id>`; run `smol-claude --resume <id>`
+instead, from the same directory (sessions are filed by working directory,
+which matches the host path). `smol-claude --continue` and a bare
+`smol-claude --resume` (to pick from a list) work too. Plain `claude` on the
+host won't find these sessions, because they live in the smol-claude state
+directory, not `~/.claude`.
+
 In the guest:
 
 ```sh
