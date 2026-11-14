@@ -128,7 +128,7 @@ is unaffected. glibc sends DNS A and AAAA queries on one connected socket, so
 container DNS broke (apt: "Temporary failure resolving"). The
 `single-request-reopen` resolver option fixes DNS. Other UDP-heavy workloads in
 containers (QUIC, statsd, syslog) may need `--network host`. This is a libkrun
-bug, worth reporting upstream.
+bug, still present in smolvm 1.35.0, worth reporting upstream.
 
 **smolvm behaviour relied on** (checked against the v1.34.4 source): `machine
 status` exits 0 for a running or stopped machine and fails for an unknown one
