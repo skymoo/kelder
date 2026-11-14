@@ -1,16 +1,19 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Adam Mercer
-# Run Claude Code in the smolvm guest with one host directory attached.
-#   smol-claude [-C DIR] [--] [claude args...]   DIR defaults to the current directory
+# Run Claude Code in the smolvm guest with host directories attached.
+#   smol-claude [--] [claude args...]            attach the current directory
+#   smol-claude self [-C DIR] [-a DIR]... [--] [claude args...]
+#                                                choose the directories
 #   smol-claude self help                        smol-claude's own usage
 #   smol-claude self setup                       create and provision the machine
-# `--` ends smol-claude's options, so `smol-claude -- self ...` reaches claude.
+# Only arguments after `self` are smol-claude's; everything else goes to
+# claude. `smol-claude -- self ...` gives claude a prompt starting with "self".
 #
-# DIR is attached at the same path it has on the host and detached when the
-# last session using it exits. Only one directory is attached at a time, so
-# Claude never sees another project; a second session for a different
-# directory is refused (use VM=<name> to run it in a separate machine).
+# Each directory is attached at the same path it has on the host and detached
+# when the last session using it exits. Only one set of directories is attached
+# at a time, so Claude never sees a project it wasn't given; a second session
+# for a different set is refused (use VM=<name> to run it in a separate machine).
 set -euo pipefail
 # lib/ and guest/ sit next to bin/ in a checkout and in share/smol-claude when
 # installed (make install).
@@ -21,19 +24,22 @@ source "$root/lib/smol.sh"
 
 usage() {
   cat <<'EOF'
-Usage: smol-claude [-C DIR] [--] [CLAUDE_ARGS...]
+Usage: smol-claude [--] [CLAUDE_ARGS...]
+       smol-claude self [-C DIR] [-a DIR]... [--] [CLAUDE_ARGS...]
        smol-claude self COMMAND
 
 Run Claude Code in the smolvm guest with DIR (default: the current
-directory) attached at the same path it has on the host.
+directory) attached at the same path it has on the host. Only arguments
+after `self` are smol-claude's own.
 
-Options:
-  -C DIR   attach and start Claude in DIR; must come first
+Options (after self):
+  -C DIR   attach and start Claude in DIR
+  -a DIR   also attach DIR and give Claude access to it (repeatable)
   --       end of smol-claude options; the rest goes to claude
 
-Commands:
-  self help   show this help
-  self setup  create and provision the machine (safe to re-run)
+Commands (after self):
+  help     show this help
+  setup    create and provision the machine (safe to re-run)
 
 Every other argument is passed to claude unchanged; run
 `smol-claude --help` for Claude Code's options.
@@ -47,6 +53,8 @@ Environment:
 EOF
 }
 
+dir=.
+extra=()
 if [[ ${1:-} == self ]]; then
   case ${2:-} in
     help) usage; exit 0 ;;
@@ -54,25 +62,49 @@ if [[ ${1:-} == self ]]; then
       # Source it through bash -c so $0, and with it die's prefix, is smol-claude.
       # shellcheck disable=SC2016  # $1 expands in the child bash
       exec bash -c '. "$1"' smol-claude "$root/lib/setup.sh" ;;
-    *) die "unknown command 'self ${2:-}'; see 'smol-claude self help'" ;;
+    -C|-a) ;;
+    *) die "unknown command or option 'self ${2:-}'; see 'smol-claude self help'" ;;
   esac
-fi
-
-dir=.
-if [[ ${1:-} == -C ]]; then
-  [[ $# -ge 2 ]] || die "-C needs a directory"
-  dir=$2
-  shift 2
-fi
-if [[ ${1:-} == -- ]]; then
+  shift
+  while [[ $# -gt 0 ]]; do
+    case $1 in
+      -C)
+        [[ $# -ge 2 ]] || die "-C needs a directory"
+        dir=$2
+        shift 2 ;;
+      -a)
+        [[ $# -ge 2 ]] || die "-a needs a directory"
+        extra+=("$2")
+        shift 2 ;;
+      --) shift; break ;;
+      *) break ;;
+    esac
+  done
+elif [[ ${1:-} == -- ]]; then
   shift
 fi
-[[ -d $dir ]] || die "not a directory: $dir"
-dir=$(realpath "$dir")
-[[ $dir != / && $dir != "$(realpath "$HOME")" ]] || die "won't attach $dir; run smol-claude from a project directory"
-[[ $dir != *:* ]] || die "can't attach a path containing ':'"
+
+# Succeeds if $1 is one of the remaining arguments.
+contains() { local x=$1 y; shift; for y; do [[ $y == "$x" ]] && return 0; done; return 1; }
+
 state_real=$(realpath -m "$CLAUDE_STATE")
-[[ $dir/ != "$state_real"/* && $state_real/ != "$dir"/* ]] || die "won't attach $dir: it overlaps Claude's state directory $state_real"
+# Resolve and check a directory to attach; prints its real path.
+check_dir() {
+  local d
+  [[ -d $1 ]] || die "not a directory: $1"
+  d=$(realpath "$1")
+  [[ $d != / && $d != "$(realpath "$HOME")" ]] || die "won't attach $d; run smol-claude from a project directory"
+  [[ $d != *:* ]] || die "can't attach a path containing ':'"
+  [[ $d/ != "$state_real"/* && $state_real/ != "$d"/* ]] || die "won't attach $d: it overlaps Claude's state directory $state_real"
+  printf %s "$d"
+}
+dir=$(check_dir "$dir")
+# dirs is every directory this session attaches: the primary one first.
+dirs=("$dir")
+for d in "${extra[@]}"; do
+  d=$(check_dir "$d")
+  contains "$d" "${dirs[@]}" || dirs+=("$d")
+done
 
 vm_exists || die "machine '$VM' does not exist; run 'smol-claude self setup' first"
 # Start before opening any lock files, so the VM process can't inherit them.
@@ -85,12 +117,15 @@ vm_start
 # this between concurrent smol-claude runs.
 state="${XDG_RUNTIME_DIR:-$HOME/.cache}/smol-claude/$VM"
 mkdir -p "$state"
-key=$(printf %s "$dir" | sha256sum | cut -c1-16)
+key() { printf %s "$1" | sha256sum | cut -c1-16; }
 
 # Detach directories no session is using. With --only-free, stop there;
-# otherwise also fail if a different directory is still in use.
+# otherwise also fail unless the directories still in use are exactly this
+# session's set (mounts are machine-wide, so any other set would let one
+# session see another's projects).
 sweep() {
-  local f k other l
+  local f k other l d
+  local -a used=()
   for f in "$state"/*.path; do
     [[ -e $f ]] || continue
     k=${f%.path}
@@ -99,28 +134,47 @@ sweep() {
     if flock -n -x "$l"; then
       if vm_attached "$other" {l}>&-; then vm_detach "$other" {l}>&-; fi
       rm -f "$f" "$k.lock"
-    elif [[ ${1:-} != --only-free && $other != "$dir" ]]; then
-      exec {l}>&-
-      die "another smol-claude session is using $other; only one directory can be attached at a time (use VM=<name> for another machine)"
+    elif [[ ${1:-} != --only-free ]]; then
+      used+=("$other")
+      if ! contains "$other" "${dirs[@]}"; then
+        exec {l}>&-
+        die "another smol-claude session is using $other; only one set of directories can be attached at a time (use VM=<name> for another machine)"
+      fi
     fi
     exec {l}>&-
+  done
+  [[ ${#used[@]} -gt 0 ]] || return 0
+  for d in "${dirs[@]}"; do
+    contains "$d" "${used[@]}" || die "another smol-claude session is using ${used[*]}; only one set of directories can be attached at a time (use VM=<name> for another machine)"
   done
 }
 
 exec {glock}>"$state/.lock"
 flock "$glock"
 sweep
-if ! vm_attached "$dir"; then
-  vm_attach "$dir" {glock}>&-
-fi
-printf %s "$dir" >"$state/$key.path"
-exec {mylock}>"$state/$key.lock"
-flock -s "$mylock"
+for d in "${dirs[@]}"; do
+  if ! vm_attached "$d"; then
+    vm_attach "$d" {glock}>&-
+  fi
+done
+mylocks=()
+for d in "${dirs[@]}"; do
+  k=$(key "$d")
+  printf %s "$d" >"$state/$k.path"
+  exec {l}>"$state/$k.lock"
+  flock -s "$l"
+  mylocks+=("$l")
+done
 flock -u "$glock"
+
+# Close this session's lock files; run in a subshell before exec'ing a child
+# that must not hold them.
+close_locks() { local fd; for fd in "$glock" "${mylocks[@]}"; do exec {fd}>&-; done; }
 
 # shellcheck disable=SC2317,SC2329  # called from the EXIT trap
 cleanup() {
-  exec {mylock}>&-
+  local fd
+  for fd in "${mylocks[@]}"; do exec {fd}>&-; done
   flock "$glock"
   sweep --only-free
   flock -u "$glock"
@@ -135,13 +189,24 @@ flags=(-i)
 [[ -t 0 && -t 1 ]] && flags+=(-t)
 
 rc=0
+# The guest gets the primary directory, the state directory, the number of
+# extra directories, the extra directories, then claude's arguments. Extra
+# directories are passed as --add-dir=DIR: claude's --add-dir takes several
+# values, and the separate form would swallow a following prompt.
 # shellcheck disable=SC2016  # the script expands in the guest
-smolvm machine exec --name "$VM" "${flags[@]}" -- bash -c '
-  dir=$1 state=$2; shift 2
-  mountpoint -q "$dir" || { echo "smol-claude: $dir is not attached in the guest" >&2; exit 1; }
-  mountpoint -q "$state" || { echo "smol-claude: Claude state directory is not mounted at $state; run smol-claude self setup" >&2; exit 1; }
-  cd "$dir"
-  export PATH="$HOME/.local/bin:$PATH" CLAUDE_CONFIG_DIR=$state
-  command -v claude >/dev/null || { echo "smol-claude: claude is not installed in the guest; run smol-claude self setup" >&2; exit 127; }
-  exec claude "$@"' _ "$dir" "$GUEST_CLAUDE_STATE" "$@" {glock}>&- {mylock}>&- || rc=$?
+(
+  close_locks
+  exec smolvm machine exec --name "$VM" "${flags[@]}" -- bash -c '
+    dir=$1 state=$2 n=$3; shift 3
+    extra=("${@:1:n}"); shift "$n"
+    for d in "$dir" "${extra[@]}"; do
+      mountpoint -q "$d" || { echo "smol-claude: $d is not attached in the guest" >&2; exit 1; }
+    done
+    mountpoint -q "$state" || { echo "smol-claude: Claude state directory is not mounted at $state; run smol-claude self setup" >&2; exit 1; }
+    cd "$dir"
+    export PATH="$HOME/.local/bin:$PATH" CLAUDE_CONFIG_DIR=$state
+    command -v claude >/dev/null || { echo "smol-claude: claude is not installed in the guest; run smol-claude self setup" >&2; exit 127; }
+    exec claude "${extra[@]/#/--add-dir=}" "$@"' \
+    _ "$dir" "$GUEST_CLAUDE_STATE" "$((${#dirs[@]} - 1))" "${dirs[@]:1}" "$@"
+) || rc=$?
 exit "$rc"

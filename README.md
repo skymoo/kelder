@@ -18,7 +18,7 @@ smol-claude self setup            # create and provision the machine (safe to re
 run straight from a checkout (`bin/smol-claude`), or through a symlink to them.
 
 ```text
-bin/smol-claude             host: attach a project directory and run claude in the guest
+bin/smol-claude             host: attach project directories and run claude in the guest
 lib/smol.sh                 host: shared helpers; every smolvm CLI assumption lives here
 lib/setup.sh                host: create and provision the guest (smol-claude self setup)
 guest/testvm                guest: throwaway QEMU/KVM VMs (installed to /usr/local/bin)
@@ -31,27 +31,36 @@ guest/containers-tsi.conf   guest: podman DNS workaround (see below)
 
 ```sh
 cd ~/git/app && smol-claude                  # attach ~/git/app and start Claude there
-smol-claude -C ~/git/other                   # or name the directory
+smol-claude self -C ~/git/other              # or name the directory
+cd ~/git/app && smol-claude self -a ../lib   # also give Claude ~/git/lib
 smol-claude -p "run the tests" | less        # non-interactive works too
 ```
 
 ```text
-smol-claude [-C DIR] [--] [CLAUDE_ARGS...]
+smol-claude [--] [CLAUDE_ARGS...]
+smol-claude self [-C DIR] [-a DIR]... [--] [CLAUDE_ARGS...]
 smol-claude self help
 smol-claude self setup
 ```
 
-`smol-claude` itself takes these, all before any Claude arguments:
+Only arguments after `self` (which must come first) are `smol-claude`'s
+own:
 
-- `-C DIR`: attach and start Claude in `DIR` instead of the current
-  directory. It must come first; anywhere else it is passed to `claude`.
-- `--`: ends `smol-claude`'s options, first or right after `-C DIR`;
-  everything after it goes to `claude`.
-- `self help`: show `smol-claude`'s own usage. `self` as the first
-  argument is reserved for `smol-claude` commands; to give `claude` a
-  prompt starting with "self", use `smol-claude -- self ...`.
+- `self -C DIR`: attach and start Claude in `DIR` instead of the current
+  directory.
+- `self -a DIR`: also attach `DIR` and give Claude access to it (passed
+  to `claude` as `--add-dir=DIR`). Repeat it for more directories. The
+  directory Claude starts in stays the primary one: memory and sessions
+  are filed under it.
+- `-C` and `-a` can be given in any order and combined; they end at
+  `--` or at the first argument that isn't one of them, and the rest
+  goes to `claude`.
+- `self help`: show `smol-claude`'s own usage.
 - `self setup`: create and provision the machine; safe to re-run, it
   updates packages, config and `testvm` on an existing machine.
+
+Without `self`, every argument goes to `claude`. To give `claude` a
+prompt starting with "self", use `smol-claude -- self ...`.
 
 Everything else is passed unchanged to `claude` in the guest, so `-p`,
 `--resume`, `--continue`, `--model` and the rest are Claude Code's own
@@ -65,12 +74,13 @@ These environment variables set by the host also change how it behaves:
   `~/.local/share/smol-claude/claude`).
 - `IMAGE=<image>`: base image for `smol-claude self setup` (default `debian`).
 
-One persistent machine serves every project. `smol-claude` attaches the
+One persistent machine serves every project. `smol-claude` attaches each
 directory to the running machine (`smolvm machine mount add`) at the same path
 it has on the host, and detaches it when the last session using it exits. Only
-one directory is attached at a time: a session for a different directory is
-refused while another is open (use `VM=<name>` for a second machine). A session
-that crashes leaves its directory attached until the next run cleans it up.
+one set of directories is attached at a time: a session for a different set is
+refused while another is open, since mounts are visible machine-wide (use
+`VM=<name>` for a second machine). A session that crashes leaves its
+directories attached until the next run cleans them up.
 
 Claude's state (login, settings, history, memory) is kept on the host in
 `~/.local/share/smol-claude/claude` (override with `CLAUDE_STATE`), mounted at
@@ -80,8 +90,8 @@ rebuild, and nothing is lost. Changing `IMAGE` works the same way.
 
 Arguments go straight to `claude`, so sessions resume as usual. When Claude
 exits it suggests `claude --resume <id>`; run `smol-claude --resume <id>`
-instead, from the same directory (sessions are filed by working directory,
-which matches the host path). `smol-claude --continue` and a bare
+instead, from the same directory (sessions are filed by the primary
+directory, which matches the host path). `smol-claude --continue` and a bare
 `smol-claude --resume` (to pick from a list) work too. Plain `claude` on the
 host won't find these sessions, because they live in the smol-claude state
 directory, not `~/.claude`.
