@@ -36,13 +36,19 @@ smol-claude -p "run the tests" | less        # non-interactive works too
 ```
 
 ```text
-smol-claude [-C DIR] [CLAUDE_ARGS...]
+smol-claude [-C DIR] [--] [CLAUDE_ARGS...]
+smol-claude self help
 ```
 
-`smol-claude` itself takes one option:
+`smol-claude` itself takes these, all before any Claude arguments:
 
 - `-C DIR`: attach and start Claude in `DIR` instead of the current
   directory. It must come first; anywhere else it is passed to `claude`.
+- `--`: ends `smol-claude`'s options, first or right after `-C DIR`;
+  everything after it goes to `claude`.
+- `self help`: show `smol-claude`'s own usage. `self` as the first
+  argument is reserved for `smol-claude` commands; to give `claude` a
+  prompt starting with "self", use `smol-claude -- self ...`.
 
 Everything else is passed unchanged to `claude` in the guest, so `-p`,
 `--resume`, `--continue`, `--model` and the rest are Claude Code's own

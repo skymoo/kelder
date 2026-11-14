@@ -2,7 +2,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Adam Mercer
 # Run Claude Code in the smolvm guest with one host directory attached.
-#   smol-claude [-C DIR] [claude args...]      DIR defaults to the current directory
+#   smol-claude [-C DIR] [--] [claude args...]   DIR defaults to the current directory
+#   smol-claude self help                        smol-claude's own usage
+# `--` ends smol-claude's options, so `smol-claude -- self ...` reaches claude.
 #
 # DIR is attached at the same path it has on the host and detached when the
 # last session using it exits. Only one directory is attached at a time, so
@@ -16,11 +18,46 @@ root="$(dirname "$(realpath "${BASH_SOURCE[0]}")")/.."
 # shellcheck source=SCRIPTDIR/../lib/smol.sh
 source "$root/lib/smol.sh"
 
+usage() {
+  cat <<'EOF'
+Usage: smol-claude [-C DIR] [--] [CLAUDE_ARGS...]
+       smol-claude self COMMAND
+
+Run Claude Code in the smolvm guest with DIR (default: the current
+directory) attached at the same path it has on the host.
+
+Options:
+  -C DIR   attach and start Claude in DIR; must come first
+  --       end of smol-claude options; the rest goes to claude
+
+Commands:
+  self help   show this help
+
+Every other argument is passed to claude unchanged; run
+`smol-claude --help` for Claude Code's options.
+
+Environment:
+  VM            smolvm machine name (default: smol)
+  CLAUDE_STATE  Claude's state directory on the host
+                (default: ~/.local/share/smol-claude/claude)
+EOF
+}
+
+if [[ ${1:-} == self ]]; then
+  case ${2:-} in
+    help) usage; exit 0 ;;
+    *) die "unknown command 'self ${2:-}'; see 'smol-claude self help'" ;;
+  esac
+fi
+
 dir=.
 if [[ ${1:-} == -C ]]; then
   [[ $# -ge 2 ]] || die "-C needs a directory"
   dir=$2
   shift 2
+fi
+if [[ ${1:-} == -- ]]; then
+  shift
 fi
 [[ -d $dir ]] || die "not a directory: $dir"
 dir=$(realpath "$dir")
