@@ -181,6 +181,7 @@ cleanup() {
   sweep --only-free
   # Stop the machine once no session is using it.
   if ! compgen -G "$state/*.path" >/dev/null; then
+    echo "smol-claude: stopping machine '$VM'..." >&2
     vm_stop {glock}>&- || echo "smol-claude: could not stop machine '$VM'" >&2
   fi
   flock -u "$glock"

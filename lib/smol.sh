@@ -24,9 +24,13 @@ guest() { smolvm machine exec --name "$VM" -- "$@"; }
 # for an unknown one (checked against the smolvm v1.34.4 source).
 vm_exists() { smolvm machine status --name "$VM" >/dev/null 2>&1; }
 
+# Succeeds if the machine is running and its agent answers.
+vm_running() { [[ $(smolvm machine status --name "$VM" 2>/dev/null) == *"': running"* ]]; }
+
 # Start the machine if needed, then wait until it accepts exec.
 vm_start() {
   local out
+  vm_running || printf "%s: starting machine '%s'...\n" "${0##*/}" "$VM" >&2
   if ! out=$(smolvm machine start --name "$VM" 2>&1); then
     # Starting a running machine succeeds; a paused one fails. Accept a failure
     # as long as the machine answers, otherwise show smolvm's error.
