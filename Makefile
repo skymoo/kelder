@@ -8,8 +8,8 @@ PREFIX  ?= $(HOME)/.local
 BINDIR  ?= $(PREFIX)/bin
 DATADIR ?= $(PREFIX)/share/smol-claude
 
-BIN   = bin/smol-claude bin/smol-claude-setup
-LIB   = lib/smol.sh
+BIN   = bin/smol-claude
+LIB   = lib/smol.sh lib/setup.sh
 GUEST = guest/testvm guest/containers-tsi.conf
 
 .PHONY: all install uninstall check
@@ -29,5 +29,5 @@ uninstall:
 	rm -rf $(DESTDIR)$(DATADIR)
 
 check:
-	shellcheck -x $(BIN)   # follows them into lib/smol.sh
+	shellcheck -x $(BIN) lib/setup.sh   # follows them into lib/smol.sh
 	python3 -c 'import ast, sys; ast.parse(open(sys.argv[1]).read(), sys.argv[1])' guest/testvm

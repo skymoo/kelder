@@ -11,7 +11,7 @@ bash, flock and realpath (util-linux and coreutils).
 ```sh
 make install                      # to ~/.local; make sure ~/.local/bin is on PATH
 make install PREFIX=/usr/local    # or system-wide, as root
-smol-claude-setup                 # create and provision the machine (safe to re-run)
+smol-claude self setup            # create and provision the machine (safe to re-run)
 ```
 
 `make uninstall` (with the same `PREFIX`) removes it again. The scripts also
@@ -19,8 +19,8 @@ run straight from a checkout (`bin/smol-claude`), or through a symlink to them.
 
 ```text
 bin/smol-claude             host: attach a project directory and run claude in the guest
-bin/smol-claude-setup       host: create and provision the guest
 lib/smol.sh                 host: shared helpers; every smolvm CLI assumption lives here
+lib/setup.sh                host: create and provision the guest (smol-claude self setup)
 guest/testvm                guest: throwaway QEMU/KVM VMs (installed to /usr/local/bin)
 guest/containers-tsi.conf   guest: podman DNS workaround (see below)
 ```
@@ -38,6 +38,7 @@ smol-claude -p "run the tests" | less        # non-interactive works too
 ```text
 smol-claude [-C DIR] [--] [CLAUDE_ARGS...]
 smol-claude self help
+smol-claude self setup
 ```
 
 `smol-claude` itself takes these, all before any Claude arguments:
@@ -49,6 +50,8 @@ smol-claude self help
 - `self help`: show `smol-claude`'s own usage. `self` as the first
   argument is reserved for `smol-claude` commands; to give `claude` a
   prompt starting with "self", use `smol-claude -- self ...`.
+- `self setup`: create and provision the machine; safe to re-run, it
+  updates packages, config and `testvm` on an existing machine.
 
 Everything else is passed unchanged to `claude` in the guest, so `-p`,
 `--resume`, `--continue`, `--model` and the rest are Claude Code's own
@@ -57,10 +60,10 @@ options (see `smol-claude --help`, which shows `claude --help`).
 These environment variables set by the host also change how it behaves:
 
 - `VM=<name>`: the smolvm machine to use (default `smol`); also read by
-  `smol-claude-setup`.
+  `smol-claude self setup`.
 - `CLAUDE_STATE=<dir>`: where Claude's state lives on the host (default
   `~/.local/share/smol-claude/claude`).
-- `IMAGE=<image>`: base image for `smol-claude-setup` (default `debian`).
+- `IMAGE=<image>`: base image for `smol-claude self setup` (default `debian`).
 
 One persistent machine serves every project. `smol-claude` attaches the
 directory to the running machine (`smolvm machine mount add`) at the same path
@@ -72,7 +75,7 @@ that crashes leaves its directory attached until the next run cleans it up.
 Claude's state (login, settings, history, memory) is kept on the host in
 `~/.local/share/smol-claude/claude` (override with `CLAUDE_STATE`), mounted at
 `/var/lib/smol-claude` in the machine, with `CLAUDE_CONFIG_DIR` pointing there.
-The machine itself is disposable: delete it and run `smol-claude-setup` to
+The machine itself is disposable: delete it and run `smol-claude self setup` to
 rebuild, and nothing is lost. Changing `IMAGE` works the same way.
 
 Arguments go straight to `claude`, so sessions resume as usual. When Claude

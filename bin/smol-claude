@@ -4,6 +4,7 @@
 # Run Claude Code in the smolvm guest with one host directory attached.
 #   smol-claude [-C DIR] [--] [claude args...]   DIR defaults to the current directory
 #   smol-claude self help                        smol-claude's own usage
+#   smol-claude self setup                       create and provision the machine
 # `--` ends smol-claude's options, so `smol-claude -- self ...` reaches claude.
 #
 # DIR is attached at the same path it has on the host and detached when the
@@ -32,6 +33,7 @@ Options:
 
 Commands:
   self help   show this help
+  self setup  create and provision the machine (safe to re-run)
 
 Every other argument is passed to claude unchanged; run
 `smol-claude --help` for Claude Code's options.
@@ -40,12 +42,18 @@ Environment:
   VM            smolvm machine name (default: smol)
   CLAUDE_STATE  Claude's state directory on the host
                 (default: ~/.local/share/smol-claude/claude)
+  IMAGE         base image for a new machine (self setup;
+                default: debian)
 EOF
 }
 
 if [[ ${1:-} == self ]]; then
   case ${2:-} in
     help) usage; exit 0 ;;
+    setup)
+      # Source it through bash -c so $0, and with it die's prefix, is smol-claude.
+      # shellcheck disable=SC2016  # $1 expands in the child bash
+      exec bash -c '. "$1"' smol-claude "$root/lib/setup.sh" ;;
     *) die "unknown command 'self ${2:-}'; see 'smol-claude self help'" ;;
   esac
 fi
@@ -66,7 +74,7 @@ dir=$(realpath "$dir")
 state_real=$(realpath -m "$CLAUDE_STATE")
 [[ $dir/ != "$state_real"/* && $state_real/ != "$dir"/* ]] || die "won't attach $dir: it overlaps Claude's state directory $state_real"
 
-vm_exists || die "machine '$VM' does not exist; run smol-claude-setup first"
+vm_exists || die "machine '$VM' does not exist; run 'smol-claude self setup' first"
 # Start before opening any lock files, so the VM process can't inherit them.
 vm_start
 
@@ -131,9 +139,9 @@ rc=0
 smolvm machine exec --name "$VM" "${flags[@]}" -- bash -c '
   dir=$1 state=$2; shift 2
   mountpoint -q "$dir" || { echo "smol-claude: $dir is not attached in the guest" >&2; exit 1; }
-  mountpoint -q "$state" || { echo "smol-claude: Claude state directory is not mounted at $state; run smol-claude-setup" >&2; exit 1; }
+  mountpoint -q "$state" || { echo "smol-claude: Claude state directory is not mounted at $state; run smol-claude self setup" >&2; exit 1; }
   cd "$dir"
   export PATH="$HOME/.local/bin:$PATH" CLAUDE_CONFIG_DIR=$state
-  command -v claude >/dev/null || { echo "smol-claude: claude is not installed in the guest; run smol-claude-setup" >&2; exit 127; }
+  command -v claude >/dev/null || { echo "smol-claude: claude is not installed in the guest; run smol-claude self setup" >&2; exit 127; }
   exec claude "$@"' _ "$dir" "$GUEST_CLAUDE_STATE" "$@" {glock}>&- {mylock}>&- || rc=$?
 exit "$rc"

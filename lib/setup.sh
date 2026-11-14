@@ -2,18 +2,18 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Adam Mercer
 # Create and provision the smolvm guest that `smol-claude` runs Claude Code in.
+# Run it as `smol-claude self setup`.
 # Safe to re-run: it updates packages, config and testvm on an existing machine.
 # The machine has no project mounted; `smol-claude` attaches one when it runs.
 # Claude's state lives on the host in $CLAUDE_STATE, so the machine is
 # disposable.
 #
-#   VM=name IMAGE=debian smol-claude-setup      machine name / base image
+#   VM=name IMAGE=debian smol-claude self setup   machine name / base image
 set -euo pipefail
-# lib/ and guest/ sit next to bin/ in a checkout and in share/smol-claude when
-# installed (make install).
+# This file sits in lib/, next to guest/, in a checkout and in
+# share/smol-claude when installed.
 root="$(dirname "$(realpath "${BASH_SOURCE[0]}")")/.."
-[[ -f $root/lib/smol.sh ]] || root=$root/share/smol-claude
-# shellcheck source=SCRIPTDIR/../lib/smol.sh
+# shellcheck source=SCRIPTDIR/smol.sh
 source "$root/lib/smol.sh"
 
 IMAGE_SET="${IMAGE+x}"

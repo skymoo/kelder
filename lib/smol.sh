@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Adam Mercer
-# Shared helpers for bin/smol-claude and bin/smol-claude-setup. Source this file; don't run it.
+# Shared helpers for bin/smol-claude and lib/setup.sh. Source this file; don't run it.
 # Everything that depends on how the smolvm CLI behaves lives here.
 
 VM="${VM:-smol}"
