@@ -1,0 +1,41 @@
+# git-cliff configuration: https://git-cliff.org/docs/configuration
+# CHANGELOG.md is generated from the commit subjects at release time.
+
+[changelog]
+header = """
+# Changelog\n
+All notable changes to kelder are documented in this file.\n
+"""
+body = """
+{% if version -%}
+    ## {{ version | trim_start_matches(pat="v") }} - {{ timestamp | date(format="%Y-%m-%d") }}
+{% else -%}
+    ## Unreleased
+{% endif -%}
+{% if version == "v0.0.1" %}
+    Initial release: run Claude Code in a smolvm guest with host directories attached.
+{% else -%}
+{% for group, commits in commits | group_by(attribute="group") %}
+    ### {{ group | upper_first }}
+    {% for commit in commits %}
+        - {{ commit.message | split(pat="\n") | first | upper_first | trim }}\
+    {% endfor %}
+{% endfor -%}
+{% endif %}\n
+"""
+trim = true
+
+[git]
+conventional_commits = true
+# The three commits that predate conventional subjects are left out.
+filter_unconventional = true
+# Only what someone running kelder would notice; docs, chore, ci and
+# test commits are skipped.
+commit_parsers = [
+    { message = "^feat", group = "Added" },
+    { message = "^fix", group = "Fixed" },
+    { message = "^(refactor|perf)", group = "Changed" },
+    { message = ".*", skip = true },
+]
+topo_order = false
+sort_commits = "oldest"

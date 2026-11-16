@@ -18,6 +18,7 @@ Issues = "https://github.com/skymoo/kelder/issues"
 
 [dependency-groups]
 dev = [
+    "git-cliff==2.14.2",
     "pytest==9.2.0",
     "ruff==0.17.5",
 ]
