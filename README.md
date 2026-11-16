@@ -153,6 +153,7 @@ after an upgrade, keep it too and create the replacement under another name.
 ```sh
 uv run pytest         # the tests
 uv run ruff check     # lint
+uv run ty check       # type check
 ```
 
 The tests need neither smolvm nor a network. The unit tests cover argument
