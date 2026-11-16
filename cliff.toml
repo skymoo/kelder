@@ -4,9 +4,10 @@
 [changelog]
 header = """
 # Changelog\n
-All notable changes to kelder are documented in this file.\n
+All notable changes to kelder are documented in this file.
 """
 body = """
+
 {% if version -%}
     ## {{ version | trim_start_matches(pat="v") }} - {{ timestamp | date(format="%Y-%m-%d") }}
 {% else -%}
@@ -21,7 +22,7 @@ body = """
         - {{ commit.message | split(pat="\n") | first | upper_first | trim }}\
     {% endfor %}
 {% endfor -%}
-{% endif %}\n
+{% endif %}
 """
 trim = true
 
