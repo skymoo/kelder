@@ -7,7 +7,7 @@ import os
 import tempfile
 import unittest
 
-from smol_claude.session import Session
+from kelder.session import Session
 
 
 class FakeVm:
@@ -96,7 +96,7 @@ class SessionTest(unittest.TestCase):
 
     def test_a_different_directory_is_refused(self):
         self.session("/a").attach()
-        self.assertIn("another smol-claude session is using /a", self.dies(self.session("/b").attach))
+        self.assertIn("another kelder session is using /a", self.dies(self.session("/b").attach))
         self.assertEqual(self.vm.mounted, {"/a"})
 
     def test_a_larger_or_smaller_set_is_refused(self):

@@ -2,14 +2,14 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Adam Mercer
 #
-# smoketest: check, from inside the guest, the smolvm behaviours smol-claude
+# smoketest: check, from inside the guest, the smolvm behaviours kelder
 # relies on. Run it in a throwaway machine after upgrading smolvm:
 #
-#   VM=smol-test smol-claude self setup
-#   VM=smol-test smol-claude     then, in that session: smoketest [DIR]
+#   VM=smol-test kelder self setup
+#   VM=smol-test kelder     then, in that session: smoketest [DIR]
 #
 # DIR is an attached host directory (default: the current directory).
-# PASS/FAIL lines are behaviour smol-claude needs; KNOWN lines are smolvm bugs
+# PASS/FAIL lines are behaviour kelder needs; KNOWN lines are smolvm bugs
 # the guest config works around; CHANGED lines mean a known bug is gone and its
 # workaround may be removable. Exits non-zero if anything FAILs.
 set -uo pipefail

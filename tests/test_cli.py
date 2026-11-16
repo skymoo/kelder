@@ -10,7 +10,7 @@ import time
 import unittest
 from unittest import mock
 
-from smol_claude import cli, smolvm
+from kelder import cli, smolvm
 
 
 def dies(test, fn, *args):
@@ -112,14 +112,14 @@ class ResumeCommand(unittest.TestCase):
         self.transcript("old", age=100)
         self.transcript("earlier", age=5)
         self.transcript("latest", age=1)
-        self.assertEqual(cli.resume_command([self.proj], self.now - 10), "smol-claude --resume latest")
+        self.assertEqual(cli.resume_command([self.proj], self.now - 10), "kelder --resume latest")
 
     def test_other_machine_and_directories(self):
         self.transcript("abc", age=1)
         os.chdir(self.tmp)
         with mock.patch.object(smolvm, "VM", "smol-test"):
             self.assertEqual(cli.resume_command([self.proj, "/x y"], self.now - 10),
-                             f"VM=smol-test smol-claude self -C {self.proj} -a '/x y' -- --resume abc")
+                             f"VM=smol-test kelder self -C {self.proj} -a '/x y' -- --resume abc")
 
 
 if __name__ == "__main__":

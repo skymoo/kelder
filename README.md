@@ -1,4 +1,4 @@
-# smol-claude: Claude Code in a smolvm guest
+# kelder: Claude Code in a smolvm guest
 
 Claude Code runs inside a minimal smolvm VM (Debian, nested KVM). It can start
 its own VMs (`testvm`) and containers (`podman`) there to run tests.
@@ -6,46 +6,46 @@ its own VMs (`testvm`) and containers (`podman`) there to run tests.
 ## Install
 
 Needs, on the host: smolvm 1.32 or newer, KVM with nested virtualization,
-Python 3.11 or newer and bash. smol-claude itself has no Python dependencies.
+Python 3.11 or newer and bash. kelder itself has no Python dependencies.
 
 ```sh
-uv tool install .                 # from a checkout; puts smol-claude on PATH
-smol-claude self setup            # create and provision the machine (safe to re-run)
+uv tool install .                 # from a checkout; puts kelder on PATH
+kelder self setup                 # create and provision the machine (safe to re-run)
 ```
 
-`uv tool uninstall smol-claude` removes it again. From a checkout it also runs
-without installing, as `uv run smol-claude`.
+`uv tool uninstall kelder` removes it again. From a checkout it also runs
+without installing, as `uv run kelder`.
 
 ```text
-src/smol_claude/cli.py          the smol-claude command: arguments, running claude in the guest
-src/smol_claude/session.py      which directories are attached, and by which sessions
-src/smol_claude/smolvm.py       settings and every smolvm CLI assumption
-src/smol_claude/provision.py    create and provision the guest (smol-claude self setup)
-src/smol_claude/smoketest.py    test a smolvm upgrade (smol-claude self smoketest)
-src/smol_claude/guest/          files setup copies into the guest:
-  testvm                          throwaway QEMU/KVM VMs (/usr/local/bin)
-  smoketest                       checks smolvm behaviour after an upgrade (/usr/local/bin)
-  containers-tsi.conf             podman DNS workaround (see below)
+src/kelder/cli.py          the kelder command: arguments, running claude in the guest
+src/kelder/session.py      which directories are attached, and by which sessions
+src/kelder/smolvm.py       settings and every smolvm CLI assumption
+src/kelder/provision.py    create and provision the guest (kelder self setup)
+src/kelder/smoketest.py    test a smolvm upgrade (kelder self smoketest)
+src/kelder/guest/          files setup copies into the guest:
+  testvm                     throwaway QEMU/KVM VMs (/usr/local/bin)
+  smoketest                  checks smolvm behaviour after an upgrade (/usr/local/bin)
+  containers-tsi.conf        podman DNS workaround (see below)
 ```
 
 ## Usage
 
 ```sh
-cd ~/git/app && smol-claude                  # attach ~/git/app and start Claude there
-smol-claude self -C ~/git/other              # or name the directory
-cd ~/git/app && smol-claude self -a ../lib   # also give Claude ~/git/lib
-smol-claude -p "run the tests" | less        # non-interactive works too
+cd ~/git/app && kelder                  # attach ~/git/app and start Claude there
+kelder self -C ~/git/other              # or name the directory
+cd ~/git/app && kelder self -a ../lib   # also give Claude ~/git/lib
+kelder -p "run the tests" | less        # non-interactive works too
 ```
 
 ```text
-smol-claude [--] [CLAUDE_ARGS...]
-smol-claude self [-C DIR] [-a DIR]... [--] [CLAUDE_ARGS...]
-smol-claude self help
-smol-claude self setup
-smol-claude self version
+kelder [--] [CLAUDE_ARGS...]
+kelder self [-C DIR] [-a DIR]... [--] [CLAUDE_ARGS...]
+kelder self help
+kelder self setup
+kelder self version
 ```
 
-Only arguments after `self` (which must come first) are `smol-claude`'s
+Only arguments after `self` (which must come first) are `kelder`'s
 own:
 
 - `self -C DIR`: attach and start Claude in `DIR` instead of the current
@@ -57,31 +57,31 @@ own:
 - `-C` and `-a` can be given in any order and combined; they end at
   `--` or at the first argument that isn't one of them, and the rest
   goes to `claude`.
-- `self help`: show `smol-claude`'s own usage.
-- `self version`: show `smol-claude`'s version.
+- `self help`: show `kelder`'s own usage.
+- `self version`: show `kelder`'s version.
 - `self setup`: create and provision the machine; safe to re-run, it
   updates packages, config and `testvm` on an existing machine.
 - `self smoketest`: test the installed smolvm in a throwaway machine (see
   [Testing a smolvm upgrade](#testing-a-smolvm-upgrade)).
 
 Without `self`, every argument goes to `claude`. To give `claude` a
-prompt starting with "self", use `smol-claude -- self ...`.
+prompt starting with "self", use `kelder -- self ...`.
 
 Everything else is passed unchanged to `claude` in the guest, so `-p`,
 `--resume`, `--continue`, `--model` and the rest are Claude Code's own
-options (see `smol-claude --help`, which shows `claude --help`).
+options (see `kelder --help`, which shows `claude --help`).
 
 These environment variables set by the host also change how it behaves:
 
 - `VM=<name>`: the smolvm machine to use (default `smol`); also read by
-  `smol-claude self setup`.
+  `kelder self setup`.
 - `CLAUDE_STATE=<dir>`: where Claude's state lives on the host (default
-  `~/.local/share/smol-claude/claude`).
-- `IMAGE=<image>`: base image for `smol-claude self setup` (default `debian`).
+  `~/.local/share/kelder/claude`).
+- `IMAGE=<image>`: base image for `kelder self setup` (default `debian`).
 - `NO_UPDATE=1`: skip the weekly package update (below) for this run.
 - `DRY_RUN=1`: print every `smolvm` call instead of running it.
 
-One machine serves every project. `smol-claude` starts it if needed and
+One machine serves every project. `kelder` starts it if needed and
 attaches each directory to it (`smolvm machine mount add`) at the same path
 it has on the host, and detaches it when the last session using it exits. Only
 one set of directories is attached at a time: a session for a different set is
@@ -91,19 +91,19 @@ directories attached until the next run cleans them up.
 
 The session that boots the machine also keeps it up to date: if the guest
 was last updated more than a week ago, it upgrades the packages, uv and
-Claude Code before starting Claude (`smol-claude: updating machine 'smol'
+Claude Code before starting Claude (`kelder: updating machine 'smol'
 ...`), which can take a minute. A failed update is reported and the session
 starts anyway.
-`smol-claude self setup` does the same update whenever it runs.
+`kelder self setup` does the same update whenever it runs.
 
-When the last session exits, `smol-claude` stops the machine, so anything
+When the last session exits, `kelder` stops the machine, so anything
 left running in it (`testvm` VMs, containers) stops too. The next session
 boots it again.
 
 Claude's state (login, settings, history, memory) is kept on the host in
-`~/.local/share/smol-claude/claude` (override with `CLAUDE_STATE`), mounted at
-`/var/lib/smol-claude` in the machine, with `CLAUDE_CONFIG_DIR` pointing there.
-The machine itself is disposable: delete it and run `smol-claude self setup` to
+`~/.local/share/kelder/claude` (override with `CLAUDE_STATE`), mounted at
+`/var/lib/kelder` in the machine, with `CLAUDE_CONFIG_DIR` pointing there.
+The machine itself is disposable: delete it and run `kelder self setup` to
 rebuild, and nothing is lost. Changing `IMAGE` works the same way.
 
 Sessions start with `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` unset:
@@ -111,11 +111,11 @@ either would outrank the stored login and bill the Console instead of the
 subscription.
 
 Arguments go straight to `claude`, so sessions resume as usual. When Claude
-exits it suggests `claude --resume <id>`; run `smol-claude --resume <id>`
+exits it suggests `claude --resume <id>`; run `kelder --resume <id>`
 instead, from the same directory (sessions are filed by the primary
-directory, which matches the host path). `smol-claude --continue` and a bare
-`smol-claude --resume` (to pick from a list) work too. Plain `claude` on the
-host won't find these sessions, because they live in the smol-claude state
+directory, which matches the host path). `kelder --continue` and a bare
+`kelder --resume` (to pick from a list) work too. Plain `claude` on the
+host won't find these sessions, because they live in the kelder state
 directory, not `~/.claude`.
 
 The guest has `uv`, `make` and `shellcheck` for running a project's own
@@ -135,12 +135,12 @@ podman run --rm docker.io/library/debian:trixie ...          # use full image na
 
 ## Testing a smolvm upgrade
 
-Exit every smol-claude session so `smol` is stopped, upgrade smolvm, then run
-`smol-claude self smoketest` from a project directory. It creates a throwaway
+Exit every kelder session so `smol` is stopped, upgrade smolvm, then run
+`kelder self smoketest` from a project directory. It creates a throwaway
 `smol-test` machine (`VM=<name>` picks another name), runs the guest's
 `smoketest` in it with the current directory attached, checks the smolvm
 behaviour relied on (see below) from the host, and deletes the machine if
-everything passed. FAIL means the upgrade broke something smol-claude needs;
+everything passed. FAIL means the upgrade broke something kelder needs;
 KNOWN is a smolvm bug the guest config works around; CHANGED means that bug
 is gone and its workaround may be removable.
 
@@ -155,7 +155,7 @@ uv run ruff check     # lint
 ```
 
 The tests need neither smolvm nor a network. The unit tests cover argument
-parsing and the attachment bookkeeping. The rest run `smol-claude` against
+parsing and the attachment bookkeeping. The rest run `kelder` against
 `tests/fake_smolvm.py`, a stand-in selected with `SMOLVM_BIN` that records
 each call and runs `exec` commands locally with a fake `claude`; they check
 the `smolvm` calls made and the environment `claude` would get. They are
@@ -187,6 +187,6 @@ paused one; `machine exec` takes `-i` and `-t` as separate flags.
 
 ## License
 
-Copyright (C) 2026 Adam Mercer. smol-claude is free software, licensed under
+Copyright (C) 2026 Adam Mercer. kelder is free software, licensed under
 the GNU General Public License, version 3 or (at your option) any later
 version. See [LICENSE](LICENSE).

@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Adam Mercer
-"""The smol-claude command.
+"""The kelder command.
 
-Only arguments after `self` are smol-claude's; everything else goes to
-claude. `smol-claude -- self ...` gives claude a prompt starting with "self".
+Only arguments after `self` are kelder's; everything else goes to
+claude. `kelder -- self ...` gives claude a prompt starting with "self".
 
 Each directory is attached at the same path it has on the host and detached
 when the last session using it exits. Only one set of directories is attached
@@ -25,33 +25,33 @@ from .session import Session
 from .smolvm import die, note
 
 USAGE = """\
-Usage: smol-claude [--] [CLAUDE_ARGS...]
-       smol-claude self [-C DIR] [-a DIR]... [--] [CLAUDE_ARGS...]
-       smol-claude self COMMAND
+Usage: kelder [--] [CLAUDE_ARGS...]
+       kelder self [-C DIR] [-a DIR]... [--] [CLAUDE_ARGS...]
+       kelder self COMMAND
 
 Run Claude Code in the smolvm guest with DIR (default: the current
 directory) attached at the same path it has on the host. Only arguments
-after `self` are smol-claude's own.
+after `self` are kelder's own.
 
 Options (after self):
   -C DIR   attach and start Claude in DIR
   -a DIR   also attach DIR and give Claude access to it (repeatable)
-  --       end of smol-claude options; the rest goes to claude
+  --       end of kelder options; the rest goes to claude
 
 Commands (after self):
   help       show this help
   setup      create and provision the machine (safe to re-run)
   smoketest  test the installed smolvm in a throwaway machine
-  version    show smol-claude's version
+  version    show kelder's version
 
 Every other argument is passed to claude unchanged; run
-`smol-claude --help` for Claude Code's options.
+`kelder --help` for Claude Code's options.
 
 Environment:
   VM            smolvm machine name (default: smol; smol-test for
                 self smoketest)
   CLAUDE_STATE  Claude's state directory on the host
-                (default: ~/.local/share/smol-claude/claude)
+                (default: ~/.local/share/kelder/claude)
   IMAGE         base image for a new machine (self setup;
                 default: debian)
   NO_UPDATE     1 skips the weekly package update when a session
@@ -69,9 +69,9 @@ GUEST_SCRIPT = """
 dir=$1 state=$2 n=$3; shift 3
 extra=("${@:1:n}"); shift "$n"
 for d in "$dir" "${extra[@]}"; do
-  mountpoint -q "$d" || { echo "smol-claude: $d is not attached in the guest" >&2; exit 1; }
+  mountpoint -q "$d" || { echo "kelder: $d is not attached in the guest" >&2; exit 1; }
 done
-mountpoint -q "$state" || { echo "smol-claude: Claude state directory is not mounted at $state; run smol-claude self setup" >&2; exit 1; }
+mountpoint -q "$state" || { echo "kelder: Claude state directory is not mounted at $state; run kelder self setup" >&2; exit 1; }
 cd "$dir"
 # An API key or bearer token in the environment outranks the stored login
 # and would silently bill the Console instead of the subscription.
@@ -94,7 +94,7 @@ export UV_PROJECT_ENVIRONMENT=.venv-smol
 # uv's cache is on the guest's disk and the environment is in the attached
 # directory, so it can never hard-link between them; copy without warning.
 export UV_LINK_MODE=copy
-command -v claude >/dev/null || { echo "smol-claude: claude is not installed in the guest; run smol-claude self setup" >&2; exit 127; }
+command -v claude >/dev/null || { echo "kelder: claude is not installed in the guest; run kelder self setup" >&2; exit 127; }
 exec claude "${extra[@]/#/--add-dir=}" "$@"
 """
 
@@ -115,7 +115,7 @@ def parse_args(args):
         if sub in COMMANDS:
             return sub, primary, extra, []
         if sub not in ("-C", "-a"):
-            die(f"unknown command or option 'self {sub}'; see 'smol-claude self help'")
+            die(f"unknown command or option 'self {sub}'; see 'kelder self help'")
         args = args[1:]
         while args:
             if args[0] == "-C":
@@ -143,7 +143,7 @@ def check_dir(path):
         die(f"not a directory: {path}")
     d = os.path.realpath(path)
     if d in ("/", os.path.realpath(smolvm.HOME)):
-        die(f"won't attach {d}; run smol-claude from a project directory")
+        die(f"won't attach {d}; run kelder from a project directory")
     if ":" in d:
         die("can't attach a path containing ':'")
     state = os.path.realpath(smolvm.CLAUDE_STATE)
@@ -153,7 +153,7 @@ def check_dir(path):
 
 
 def resume_command(dirs, since):
-    """The smol-claude command that resumes the session that just ended, or None.
+    """The kelder command that resumes the session that just ended, or None.
 
     Claude's own hint says `claude --resume ID`, which doesn't work on the
     host. The ID is the name of the newest transcript written since `since`
@@ -179,7 +179,7 @@ def resume_command(dirs, since):
         options += ["-C", dirs[0]]
     for d in dirs[1:]:
         options += ["-a", d]
-    command = ["smol-claude", *(["self", *options, "--"] if options else []), "--resume", newest[1]]
+    command = ["kelder", *(["self", *options, "--"] if options else []), "--resume", newest[1]]
     prefix = f"VM={shlex.quote(smolvm.VM)} " if smolvm.VM != "smol" else ""
     return prefix + shlex.join(command)
 
@@ -198,17 +198,17 @@ def run_claude(primary, extra, claude_args):
             dirs.append(d)
 
     if not smolvm.exists():
-        die(f"machine '{smolvm.VM}' does not exist; run 'smol-claude self setup' first")
+        die(f"machine '{smolvm.VM}' does not exist; run 'kelder self setup' first")
 
     from . import provision
     session = Session(dirs, on_boot=provision.update_if_stale)
     session.attach()
     signal.signal(signal.SIGTERM, _terminate)
     signal.signal(signal.SIGHUP, _terminate)
-    # Let Ctrl-C reach Claude; smol-claude itself keeps going so cleanup still runs.
+    # Let Ctrl-C reach Claude; kelder itself keeps going so cleanup still runs.
     signal.signal(signal.SIGINT, lambda *_: None)
     try:
-        # Only ask for a TTY when there is one, so `smol-claude -p ... | less` and scripts work.
+        # Only ask for a TTY when there is one, so `kelder -p ... | less` and scripts work.
         flags = ["-i"]
         if sys.stdin.isatty() and sys.stdout.isatty():
             flags.append("-t")
@@ -233,7 +233,7 @@ def main(argv=None):
         print(USAGE, end="")
         sys.exit(0)
     if command == "version":
-        print("smol-claude", importlib.metadata.version("smol-claude"))
+        print("kelder", importlib.metadata.version("kelder"))
         sys.exit(0)
     smolvm.require()
     if command == "setup":

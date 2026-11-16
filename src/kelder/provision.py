@@ -1,13 +1,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Adam Mercer
-"""Create and provision the smolvm guest that smol-claude runs Claude Code in.
+"""Create and provision the smolvm guest that kelder runs Claude Code in.
 
-Run it as `smol-claude self setup`. Safe to re-run: it updates packages,
+Run it as `kelder self setup`. Safe to re-run: it updates packages,
 config and testvm on an existing machine. The machine has no project
-mounted; smol-claude attaches one when it runs. Claude's state lives on the
+mounted; kelder attaches one when it runs. Claude's state lives on the
 host in $CLAUDE_STATE, so the machine is disposable.
 
-  VM=name IMAGE=debian smol-claude self setup   machine name / base image
+  VM=name IMAGE=debian kelder self setup   machine name / base image
 """
 import base64
 import os
@@ -54,7 +54,7 @@ GUEST_FILES = [
 # Where the guest records when its packages were last brought up to date
 # (seconds since the epoch), and how old that may get before a session that
 # boots the machine updates it first.
-STAMP = "/var/lib/smol-claude-updated"
+STAMP = "/var/lib/kelder-updated"
 UPDATE_DAYS = 7
 
 # Upgrade everything and install the packages given.
@@ -188,7 +188,7 @@ def host_checks():
     if "Y" not in nested and "1" not in nested:
         warn("nested virtualization looks disabled on the host; VMs inside the guest won't get KVM")
     if smolvm.run("machine", "mount", "--help", capture="all")[0] != 0:
-        die("smolvm 1.32 or newer is needed (smol-claude uses 'smolvm machine mount')")
+        die("smolvm 1.32 or newer is needed (kelder uses 'smolvm machine mount')")
 
 
 def host_timezone():
@@ -234,7 +234,7 @@ def run():
     # change while the machine is stopped, so this restarts it once.
     if not guest_ok("mountpoint", "-q", state):
         print(f"Adding the Claude state mount; restarting machine '{vm}' "
-              "(this ends any smol-claude sessions in it)...")
+              "(this ends any kelder sessions in it)...")
         if smolvm.run("machine", "stop", "--name", vm)[0] != 0:
             die(f"could not stop machine '{vm}'")
         if smolvm.run("machine", "update", "--name", vm, "-v", state_mount)[0] != 0:
@@ -244,7 +244,7 @@ def run():
             die(f"state directory still not mounted at {state} after restart")
 
     # Machines made by older versions mount a project at /work on every boot,
-    # which Claude would see alongside whatever smol-claude attaches.
+    # which Claude would see alongside whatever kelder attaches.
     if guest_ok("mountpoint", "-q", "/work") and not smolvm.DRY_RUN:
         warn(f"machine '{vm}' still mounts a directory at /work. Remove it with:")
         print(f"  smolvm machine update --name {vm} --remove-volume <host-dir>:/work"
@@ -258,7 +258,7 @@ def run():
 
     # --- guest config --------------------------------------------------------
     for name, dest, mode in GUEST_FILES:
-        data = files("smol_claude").joinpath("guest", name).read_bytes()
+        data = files("kelder").joinpath("guest", name).read_bytes()
         if guest(*root, "bash", "-c", WRITE_FILE, "_",
                  base64.b64encode(data).decode(), dest, mode)[0] != 0:
             die(f"could not install {dest} in the guest")
@@ -293,4 +293,4 @@ def run():
     if guest("podman", "info", capture="drop")[0] != 0:
         die("podman is installed but not working")
 
-    print("Setup done. Run smol-claude from a project directory, or: smol-claude self -C DIR")
+    print("Setup done. Run kelder from a project directory, or: kelder self -C DIR")

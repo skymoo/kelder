@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Adam Mercer
-"""Run smol-claude against tests/fake_smolvm.py and check the smolvm calls it
+"""Run kelder against tests/fake_smolvm.py and check the smolvm calls it
 makes and the environment claude would get. Needs no smolvm and no network:
 the guest side runs locally with a fake claude."""
 import json
@@ -59,7 +59,7 @@ class EndToEnd(unittest.TestCase):
         }
 
     def command(self, *args):
-        return [sys.executable, "-m", "smol_claude", *args]
+        return [sys.executable, "-m", "kelder", *args]
 
     def run_sc(self, *args, cwd="proj", **env):
         p = subprocess.run(self.command(*args), cwd=self.tmp / cwd, env={**self.env, **env},
@@ -114,7 +114,7 @@ class EndToEnd(unittest.TestCase):
     def test_missing_machine(self):
         rc, out = self.run_sc("hello", FAKE_SMOLVM_FRESH="1")
         self.assertEqual(rc, 1)
-        self.assertIn("machine 'fake' does not exist; run 'smol-claude self setup' first", out)
+        self.assertIn("machine 'fake' does not exist; run 'kelder self setup' first", out)
 
     def test_concurrent_sessions(self):
         release = self.tmp / "release"
@@ -129,7 +129,7 @@ class EndToEnd(unittest.TestCase):
 
         rc, out = self.run_sc("hello", cwd="other")
         self.assertEqual(rc, 1)
-        self.assertIn(f"another smol-claude session is using {self.tmp}/proj", out)
+        self.assertIn(f"another kelder session is using {self.tmp}/proj", out)
         self.assertNotIn("argv:", out)
 
         rc, out = self.run_sc("hello")

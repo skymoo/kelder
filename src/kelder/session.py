@@ -5,7 +5,7 @@
 Each attached directory has <key>.path (its path) and <key>.lock, which every
 session using it holds a shared lock on. A lock nobody holds means the
 sessions are gone and the directory can be detached. .lock serializes all of
-this between concurrent smol-claude runs.
+this between concurrent kelder runs.
 """
 import fcntl
 import hashlib
@@ -20,7 +20,7 @@ BUSY = "only one set of directories can be attached at a time (use VM=<name> for
 
 def state_dir():
     base = smolvm.env("XDG_RUNTIME_DIR", os.path.join(smolvm.HOME, ".cache"))
-    return Path(base) / "smol-claude" / smolvm.VM
+    return Path(base) / "kelder" / smolvm.VM
 
 
 def _open(path):
@@ -28,7 +28,7 @@ def _open(path):
 
 
 class Session:
-    """One smol-claude run: dirs is every directory it attaches, primary first.
+    """One kelder run: dirs is every directory it attaches, primary first.
 
     vm is what attaches and detaches (the smolvm module; a stand-in in tests).
     on_boot, if given, is called when this session is the one that boots the
@@ -67,7 +67,7 @@ class Session:
                     if not only_free:
                         used.append(other)
                         if other not in self.dirs:
-                            die(f"another smol-claude session is using {other}; {BUSY}")
+                            die(f"another kelder session is using {other}; {BUSY}")
                     continue
                 if self.vm.attached(other) and not self.vm.detach(other):
                     if fatal:
@@ -79,7 +79,7 @@ class Session:
             finally:
                 os.close(fd)
         if used and any(d not in used for d in self.dirs):
-            die(f"another smol-claude session is using {' '.join(used)}; {BUSY}")
+            die(f"another kelder session is using {' '.join(used)}; {BUSY}")
 
     def attach(self):
         """Start the machine, attach this session's directories and lock them."""

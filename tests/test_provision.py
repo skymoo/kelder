@@ -12,7 +12,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from smol_claude import provision, smoketest, smolvm
+from kelder import provision, smoketest, smolvm
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -28,7 +28,7 @@ class Provision(unittest.TestCase):
             mock.patch.multiple(
                 smolvm, VM="fake", HOME=str(self.tmp / "home"), DRY_RUN=False,
                 SMOLVM_BIN=str(ROOT / "tests/fake_smolvm.py"),
-                CLAUDE_STATE=str(self.tmp / "state"), GUEST_CLAUDE_STATE="/var/lib/smol-claude"),
+                CLAUDE_STATE=str(self.tmp / "state"), GUEST_CLAUDE_STATE="/var/lib/kelder"),
             mock.patch.dict(os.environ, {"SMOLVM_TRACE": str(self.trace),
                                          "FAKE_SMOLVM_NOEXEC": "1", "FAKE_SMOLVM_FRESH": "1"}),
             mock.patch.object(provision, "host_checks"),
@@ -56,7 +56,7 @@ class Provision(unittest.TestCase):
         self.assertIn("Setup done.", out)
         self.assertEqual(oct((self.tmp / "state").stat().st_mode & 0o777), "0o700")
         self.assertIn(["machine", "create", "--name", "fake", "--nested", "--net", "--image", "debian",
-                       "-v", f"{self.tmp}/state:/var/lib/smol-claude"], self.calls())
+                       "-v", f"{self.tmp}/state:/var/lib/kelder"], self.calls())
         commands = self.guest_commands()
         apt = next(c for c in commands if c[2:3] == [provision.APT])
         self.assertEqual(apt[:2], ["bash", "-c"])   # the fake guest is root: no sudo

@@ -2,13 +2,13 @@
 # Copyright (C) 2026 Adam Mercer
 """Test the installed smolvm in a throwaway machine.
 
-Run it as `smol-claude self smoketest` from a project directory. It creates
+Run it as `kelder self smoketest` from a project directory. It creates
 the machine, runs the guest's smoketest in it with the current directory
-attached, checks the smolvm CLI behaviour smol-claude relies on, and deletes
+attached, checks the smolvm CLI behaviour kelder relies on, and deletes
 the machine if everything passed. A machine that failed is kept for
 inspection.
 
-  VM=name smol-claude self smoketest   picks the machine (default: smol-test)
+  VM=name kelder self smoketest   picks the machine (default: smol-test)
 """
 import sys
 

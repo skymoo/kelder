@@ -1,5 +1,5 @@
 [project]
-name = "smol-claude"
+name = "kelder"
 version = "0.0.1"
 description = "Run Claude Code in a smolvm guest with host directories attached"
 readme = "README.md"
@@ -10,7 +10,7 @@ authors = [{ name = "Adam Mercer" }]
 dependencies = []
 
 [project.scripts]
-smol-claude = "smol_claude.cli:main"
+kelder = "kelder.cli:main"
 
 [dependency-groups]
 dev = [

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Adam Mercer
-"""Stand-in for smolvm, selected with SMOLVM_BIN, so smol-claude can be run
+"""Stand-in for smolvm, selected with SMOLVM_BIN, so kelder can be run
 without a host.
 
 It appends each call's arguments to $SMOLVM_TRACE (a JSON list per line) and
-answers just enough to keep smol-claude going:
+answers just enough to keep kelder going:
   machine status     reports the machine as running; with FAKE_SMOLVM_FRESH=1
                      only machines made with `machine create` are known
   machine mount ...  add/rm/ls kept in $SMOLVM_TRACE.mounts

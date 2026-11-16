@@ -13,7 +13,7 @@ import subprocess
 import sys
 import time
 
-PROG = "smol-claude"
+PROG = "kelder"
 HOME = os.path.expanduser("~")
 
 
@@ -29,10 +29,10 @@ VM = env("VM", "smol")
 # boot, and sessions point CLAUDE_CONFIG_DIR at it.
 CLAUDE_STATE = env(
     "CLAUDE_STATE",
-    os.path.join(env("XDG_DATA_HOME", os.path.join(HOME, ".local/share")), "smol-claude/claude"),
+    os.path.join(env("XDG_DATA_HOME", os.path.join(HOME, ".local/share")), "kelder/claude"),
 )
 # Overridable so the tests can run the guest side locally; nothing else should set it.
-GUEST_CLAUDE_STATE = env("GUEST_CLAUDE_STATE", "/var/lib/smol-claude")
+GUEST_CLAUDE_STATE = env("GUEST_CLAUDE_STATE", "/var/lib/kelder")
 # The smolvm binary; the tests point it at tests/fake_smolvm.py.
 SMOLVM_BIN = env("SMOLVM_BIN", "smolvm")
 # DRY_RUN=1 prints every smolvm call and runs none.
