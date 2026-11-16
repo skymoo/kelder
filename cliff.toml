@@ -13,16 +13,12 @@ body = """
 {% else -%}
     ## Unreleased
 {% endif -%}
-{% if version == "v0.0.1" %}
-    Initial release: run Claude Code in a smolvm guest with host directories attached.
-{% else -%}
 {% for group, commits in commits | group_by(attribute="group") %}
     ### {{ group | upper_first }}
     {% for commit in commits %}
         - {{ commit.message | split(pat="\n") | first | upper_first | trim }}\
     {% endfor %}
-{% endfor -%}
-{% endif %}
+{% endfor %}
 """
 trim = true
 
