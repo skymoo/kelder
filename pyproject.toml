@@ -13,7 +13,10 @@ dependencies = []
 smol-claude = "smol_claude.cli:main"
 
 [dependency-groups]
-dev = ["pytest", "ruff"]
+dev = [
+    "pytest==9.2.0",
+    "ruff==0.17.5",
+]
 
 [build-system]
 requires = ["uv_build>=0.13.8,<0.14"]
