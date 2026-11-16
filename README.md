@@ -9,12 +9,13 @@ Needs, on the host: smolvm 1.32 or newer, KVM with nested virtualization,
 Python 3.11 or newer and bash. kelder itself has no Python dependencies.
 
 ```sh
-uv tool install .                 # from a checkout; puts kelder on PATH
+uv tool install kelder            # puts kelder on PATH
 kelder self setup                 # create and provision the machine (safe to re-run)
 ```
 
-`uv tool uninstall kelder` removes it again. From a checkout it also runs
-without installing, as `uv run kelder`.
+`uv tool uninstall kelder` removes it again. From a checkout, `uv tool
+install .` installs that copy instead, and `uv run kelder` runs it without
+installing.
 
 ```text
 src/kelder/cli.py          the kelder command: arguments, running claude in the guest
