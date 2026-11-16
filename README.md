@@ -5,28 +5,28 @@ its own VMs (`testvm`) and containers (`podman`) there to run tests.
 
 ## Install
 
-Needs, on the host: smolvm 1.32 or newer, KVM with nested virtualization, and
-bash, flock and realpath (util-linux and coreutils).
+Needs, on the host: smolvm 1.32 or newer, KVM with nested virtualization,
+Python 3.11 or newer and bash. smol-claude itself has no Python dependencies.
 
 ```sh
-make install                      # to ~/.local; make sure ~/.local/bin is on PATH
-make install PREFIX=/usr/local    # or system-wide, as root
+uv tool install .                 # from a checkout; puts smol-claude on PATH
 smol-claude self setup            # create and provision the machine (safe to re-run)
 ```
 
-`make uninstall` (with the same `PREFIX`) removes it again. The scripts also
-run straight from a checkout (`bin/smol-claude`), or through a symlink to them.
+`uv tool uninstall smol-claude` removes it again. From a checkout it also runs
+without installing, as `uv run smol-claude`.
 
 ```text
-bin/smol-claude             host: attach project directories and run claude in the guest
-lib/smol.sh                 host: shared helpers; every smolvm CLI assumption lives here
-lib/setup.sh                host: create and provision the guest (smol-claude self setup)
-guest/testvm                guest: throwaway QEMU/KVM VMs (installed to /usr/local/bin)
-guest/smoketest             guest: checks smolvm behaviour after an upgrade (installed to /usr/local/bin)
-guest/containers-tsi.conf   guest: podman DNS workaround (see below)
+src/smol_claude/cli.py          the smol-claude command: arguments, running claude in the guest
+src/smol_claude/session.py      which directories are attached, and by which sessions
+src/smol_claude/smolvm.py       settings and every smolvm CLI assumption
+src/smol_claude/provision.py    create and provision the guest (smol-claude self setup)
+src/smol_claude/smoketest.py    test a smolvm upgrade (smol-claude self smoketest)
+src/smol_claude/guest/          files setup copies into the guest:
+  testvm                          throwaway QEMU/KVM VMs (/usr/local/bin)
+  smoketest                       checks smolvm behaviour after an upgrade (/usr/local/bin)
+  containers-tsi.conf             podman DNS workaround (see below)
 ```
-
-`make install` puts `lib/` and `guest/` in `$PREFIX/share/smol-claude`.
 
 ## Usage
 
@@ -59,6 +59,8 @@ own:
 - `self help`: show `smol-claude`'s own usage.
 - `self setup`: create and provision the machine; safe to re-run, it
   updates packages, config and `testvm` on an existing machine.
+- `self smoketest`: test the installed smolvm in a throwaway machine (see
+  [Testing a smolvm upgrade](#testing-a-smolvm-upgrade)).
 
 Without `self`, every argument goes to `claude`. To give `claude` a
 prompt starting with "self", use `smol-claude -- self ...`.
@@ -74,6 +76,8 @@ These environment variables set by the host also change how it behaves:
 - `CLAUDE_STATE=<dir>`: where Claude's state lives on the host (default
   `~/.local/share/smol-claude/claude`).
 - `IMAGE=<image>`: base image for `smol-claude self setup` (default `debian`).
+- `NO_UPDATE=1`: skip the weekly package update (below) for this run.
+- `DRY_RUN=1`: print every `smolvm` call instead of running it.
 
 One machine serves every project. `smol-claude` starts it if needed and
 attaches each directory to it (`smolvm machine mount add`) at the same path
@@ -82,6 +86,13 @@ one set of directories is attached at a time: a session for a different set is
 refused while another is open, since mounts are visible machine-wide (use
 `VM=<name>` for a second machine). A session that crashes leaves its
 directories attached until the next run cleans them up.
+
+The session that boots the machine also keeps it up to date: if the guest
+was last updated more than a week ago, it upgrades the packages, uv and
+Claude Code before starting Claude (`smol-claude: updating machine 'smol'
+...`), which can take a minute. A failed update is reported and the session
+starts anyway.
+`smol-claude self setup` does the same update whenever it runs.
 
 When the last session exits, `smol-claude` stops the machine, so anything
 left running in it (`testvm` VMs, containers) stops too. The next session
@@ -93,6 +104,10 @@ Claude's state (login, settings, history, memory) is kept on the host in
 The machine itself is disposable: delete it and run `smol-claude self setup` to
 rebuild, and nothing is lost. Changing `IMAGE` works the same way.
 
+Sessions start with `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` unset:
+either would outrank the stored login and bill the Console instead of the
+subscription.
+
 Arguments go straight to `claude`, so sessions resume as usual. When Claude
 exits it suggests `claude --resume <id>`; run `smol-claude --resume <id>`
 instead, from the same directory (sessions are filed by the primary
@@ -100,6 +115,12 @@ directory, which matches the host path). `smol-claude --continue` and a bare
 `smol-claude --resume` (to pick from a list) work too. Plain `claude` on the
 host won't find these sessions, because they live in the smol-claude state
 directory, not `~/.claude`.
+
+The guest has `uv`, `make` and `shellcheck` for running a project's own
+checks. The attached directory is shared with the host, whose `.venv` points
+at the host's Python, so sessions set `UV_PROJECT_ENVIRONMENT=.venv-smol`:
+`uv run` in the guest builds and uses `.venv-smol` in each project and leaves
+`.venv` to the host.
 
 In the guest:
 
@@ -113,8 +134,9 @@ podman run --rm docker.io/library/debian:trixie ...          # use full image na
 ## Testing a smolvm upgrade
 
 Exit every smol-claude session so `smol` is stopped, upgrade smolvm, then run
-`make smoketest` in this checkout. It creates a throwaway `smol-test` machine,
-runs `guest/smoketest` in it with the checkout attached, checks the smolvm
+`smol-claude self smoketest` from a project directory. It creates a throwaway
+`smol-test` machine (`VM=<name>` picks another name), runs the guest's
+`smoketest` in it with the current directory attached, checks the smolvm
 behaviour relied on (see below) from the host, and deletes the machine if
 everything passed. FAIL means the upgrade broke something smol-claude needs;
 KNOWN is a smolvm bug the guest config works around; CHANGED means that bug
@@ -125,7 +147,18 @@ after an upgrade, keep it too and create the replacement under another name.
 
 ## Development
 
-`make check` lints the scripts (needs shellcheck and python3).
+```sh
+uv run pytest         # the tests
+uv run ruff check     # lint
+```
+
+The tests need neither smolvm nor a network. The unit tests cover argument
+parsing and the attachment bookkeeping. The rest run `smol-claude` against
+`tests/fake_smolvm.py`, a stand-in selected with `SMOLVM_BIN` that records
+each call and runs `exec` commands locally with a fake `claude`; they check
+the `smolvm` calls made and the environment `claude` would get. They are
+plain `unittest` tests, so `PYTHONPATH=src python3 -m unittest discover -s
+tests` runs them without uv.
 
 ## Quirks found while setting this up
 
