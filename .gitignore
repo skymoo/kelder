@@ -1,6 +1,4 @@
-__pycache__/
-.venv/
-dist/
 .pytest_cache/
 .ruff_cache/
-.venv-kelder/
+__pycache__/
+dist/
