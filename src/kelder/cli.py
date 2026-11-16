@@ -12,6 +12,7 @@ for a different set is refused (a project's .kelder.toml, or VM=<name>, runs it
 in a separate machine).
 """
 import importlib.metadata
+import json
 import os
 import re
 import shlex
@@ -53,6 +54,7 @@ Every other argument is passed to claude unchanged; run
 Project file (.kelder.toml in DIR):
   vm = "NAME"         the smolvm machine this project runs in
   packages = [...]    extra packages self setup installs in it
+  memory = "NAME"     the memory folder its sessions use
 
 Environment:
   VM            smolvm machine name; overrides the project file
@@ -229,6 +231,20 @@ def run_claude(primary: str, extra: list[str], claude_args: list[str],
     cfg is the primary directory's project file, if it has one.
     """
     cfg = cfg or config.Config()
+    if cfg.memory:
+        # Claude takes only the last --settings it is given, so one of the
+        # user's would silently replace this one, or this one theirs.
+        for arg in claude_args:
+            if arg == "--":
+                break
+            if arg == "--settings" or arg.startswith("--settings="):
+                die(f"--settings cannot be used with memory in {cfg.path}: Claude takes only one "
+                    "--settings, and memory is passed as one")
+        # Claude files memory under the project's path unless told otherwise.
+        # The folder is named by its path in the guest; the "=" form keeps a
+        # following prompt from being read as the option's value.
+        folder = f"{smolvm.GUEST_CLAUDE_STATE}/memory/{cfg.memory}"
+        claude_args = [f"--settings={json.dumps({'autoMemoryDirectory': folder})}", *claude_args]
     dirs = [check_dir(primary)]
     for d in extra:
         d = check_dir(d)

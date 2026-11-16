@@ -99,6 +99,27 @@ class EndToEnd(unittest.TestCase):
         self.assertIn("GIT_CONFIG_KEY_2=core.excludesFile", out.splitlines())
         self.assertIn(f"GIT_CONFIG_VALUE_2={self.tmp}/state/gitignore", out.splitlines())
 
+    def test_a_projects_memory_folder_is_given_to_claude(self):
+        (self.tmp / "proj/.kelder.toml").write_text('memory = "work"\n')
+        rc, out = self.run_sc("hello")
+        self.assertEqual(rc, 0, out)
+        settings = json.dumps({"autoMemoryDirectory": f"{self.tmp}/state/memory/work"})
+        self.assertIn(f"argv: --settings={settings} hello", out)
+
+    def test_without_a_memory_key_claude_gets_no_settings(self):
+        rc, out = self.run_sc("hello")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("argv: hello", out.splitlines())
+
+    def test_settings_of_your_own_are_refused_with_a_memory_folder(self):
+        (self.tmp / "proj/.kelder.toml").write_text('memory = "work"\n')
+        for args in (("--settings", "{}"), ("--settings={}", "hello")):
+            rc, out = self.run_sc(*args)
+            self.assertEqual(rc, 1, out)
+            self.assertIn("--settings cannot be used with memory in "
+                          f"{self.tmp}/proj/.kelder.toml", out)
+        self.assertEqual(self.calls(), "")
+
     def test_directories_are_attached_then_detached_and_the_machine_stopped(self):
         self.run_sc("hello")
         calls = self.calls()

@@ -40,7 +40,11 @@ class Load(unittest.TestCase):
 
     def test_both_keys_are_optional(self):
         path = self.write("")
-        self.assertEqual(config.load(self.proj), config.Config(path, None, []))
+        self.assertEqual(config.load(self.proj), config.Config(path, None, [], None))
+
+    def test_memory(self):
+        path = self.write('memory = "work"\n')
+        self.assertEqual(config.load(self.proj), config.Config(path, None, [], "work"))
 
     def test_only_the_primary_directory_is_checked(self):
         self.write('vm = "above"\n', where="")
@@ -59,6 +63,9 @@ class Load(unittest.TestCase):
             ('packages = "git"\n', "packages must be a list"),
             ('packages = ["--allow-unauthenticated"]\n', "not a package name: '--allow-unauthenticated'"),
             ("packages = [1]\n", "not a package name: 1"),
+            ("memory = 3\n", "memory must be a folder name"),
+            ('memory = "../work"\n', "memory must be a folder name"),
+            ('memory = "a/b"\n', "memory must be a folder name"),
         ):
             path = self.write(text)
             self.assertIn(f"{path}: {message}", self.dies(), text)

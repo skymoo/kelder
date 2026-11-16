@@ -81,6 +81,7 @@ packages = [
     "ansible-lint",
     "zfsutils-linux",
 ]
+memory = "homelab"
 ```
 
 - `vm`: the smolvm machine this project runs in, instead of `kelder`.
@@ -92,8 +93,16 @@ packages = [
   adding one, run setup again. A session in a machine that lacks any of
   them says so and starts anyway. Projects that share a machine each add
   their own; a package taken off the list stays installed.
+- `memory`: the folder Claude's memory for this project is kept in,
+  `memory/<name>` in the state directory. Without it Claude Code files
+  memory under the project's path, so it is left behind when the
+  directory moves. Projects that give the same name share one memory.
+  It reaches Claude as `--settings` with `autoMemoryDirectory`; session
+  transcripts are still filed under the project's path. Claude takes
+  only one `--settings`, so a session given one of your own is refused
+  in a project with this key.
 
-Both keys are optional. Only the directory Claude starts in is checked: a
+Every key is optional. Only the directory Claude starts in is checked: a
 file in a directory above it, or in one added with `-a`, is ignored.
 
 These environment variables set by the host also change how it behaves:
