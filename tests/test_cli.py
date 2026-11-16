@@ -41,7 +41,7 @@ class ParseArgs(unittest.TestCase):
                          ("run", ".", ["e"], ["-C", "x"]))
 
     def test_commands(self):
-        for command in ("help", "setup", "smoketest"):
+        for command in ("help", "setup", "smoketest", "version"):
             self.assertEqual(cli.parse_args(["self", command])[0], command)
 
     def test_errors(self):

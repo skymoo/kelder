@@ -10,6 +10,7 @@ when the last session using it exits. Only one set of directories is attached
 at a time, so Claude never sees a project it wasn't given; a second session
 for a different set is refused (use VM=<name> to run it in a separate machine).
 """
+import importlib.metadata
 import os
 import re
 import shlex
@@ -41,6 +42,7 @@ Commands (after self):
   help       show this help
   setup      create and provision the machine (safe to re-run)
   smoketest  test the installed smolvm in a throwaway machine
+  version    show smol-claude's version
 
 Every other argument is passed to claude unchanged; run
 `smol-claude --help` for Claude Code's options.
@@ -57,7 +59,7 @@ Environment:
   DRY_RUN       1 prints every smolvm call instead of running it
 """
 
-COMMANDS = ("help", "setup", "smoketest")
+COMMANDS = ("help", "setup", "smoketest", "version")
 
 # What runs in the guest. It gets the primary directory, the state directory,
 # the number of extra directories, the extra directories, then claude's
@@ -229,6 +231,9 @@ def main(argv=None):
     command, primary, extra, claude_args = parse_args(sys.argv[1:] if argv is None else argv)
     if command == "help":
         print(USAGE, end="")
+        sys.exit(0)
+    if command == "version":
+        print("smol-claude", importlib.metadata.version("smol-claude"))
         sys.exit(0)
     smolvm.require()
     if command == "setup":

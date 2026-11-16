@@ -42,6 +42,7 @@ smol-claude [--] [CLAUDE_ARGS...]
 smol-claude self [-C DIR] [-a DIR]... [--] [CLAUDE_ARGS...]
 smol-claude self help
 smol-claude self setup
+smol-claude self version
 ```
 
 Only arguments after `self` (which must come first) are `smol-claude`'s
@@ -57,6 +58,7 @@ own:
   `--` or at the first argument that isn't one of them, and the rest
   goes to `claude`.
 - `self help`: show `smol-claude`'s own usage.
+- `self version`: show `smol-claude`'s version.
 - `self setup`: create and provision the machine; safe to re-run, it
   updates packages, config and `testvm` on an existing machine.
 - `self smoketest`: test the installed smolvm in a throwaway machine (see
