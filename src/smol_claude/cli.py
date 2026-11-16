@@ -102,6 +102,11 @@ def parse_args(args):
 
     command is "run" or one of COMMANDS.
     """
+    # Parsed by hand, not with argparse: most of the command line is claude's,
+    # and argparse takes every dash argument as its own. It rejects
+    # `self -a DIR --resume ID` as an unrecognized option unless claude's
+    # arguments always follow `--`, and parse_known_args would keep looking
+    # for -C and -a among claude's arguments.
     primary, extra = ".", []
     if args[:1] == ["self"]:
         sub = args[1] if len(args) > 1 else ""
