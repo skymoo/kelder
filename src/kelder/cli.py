@@ -69,11 +69,12 @@ Environment:
 COMMANDS = ("help", "setup", "smoketest", "version")
 
 # What runs in the guest. It gets the primary directory, the state directory,
-# the number of extra directories, the extra directories, then claude's
-# arguments. Extra directories are passed as --add-dir=DIR: claude's --add-dir
-# takes several values, and the separate form would swallow a following prompt.
+# the name of uv's project environment, the number of extra directories, the
+# extra directories, then claude's arguments. Extra directories are passed as
+# --add-dir=DIR: claude's --add-dir takes several values, and the separate
+# form would swallow a following prompt.
 GUEST_SCRIPT = """
-dir=$1 state=$2 n=$3; shift 3
+dir=$1 state=$2 venv=$3 n=$4; shift 4
 extra=("${@:1:n}"); shift "$n"
 for d in "$dir" "${extra[@]}"; do
   mountpoint -q "$d" || { echo "kelder: $d is not attached in the guest" >&2; exit 1; }
@@ -96,8 +97,10 @@ for d in "$dir" "${extra[@]}"; do
 done
 export GIT_CONFIG_COUNT=$i
 # The directory is shared with the host, whose .venv points at the host's
-# Python. Give uv in the guest an environment of its own in each project.
-export UV_PROJECT_ENVIRONMENT=.venv-kelder
+# Python. Give uv in the guest an environment of its own in each project,
+# named after the machine: one built in another machine points at that
+# machine's Python.
+export UV_PROJECT_ENVIRONMENT=$venv
 # uv's cache is on the guest's disk and the environment is in the attached
 # directory, so it can never hard-link between them; copy without warning.
 export UV_LINK_MODE=copy
@@ -243,7 +246,8 @@ def run_claude(primary: str, extra: list[str], claude_args: list[str],
         if sys.stdin.isatty() and sys.stdout.isatty():
             flags.append("-t")
         cmd = ["machine", "exec", "--name", smolvm.VM, *flags, "--", "bash", "-c", GUEST_SCRIPT, "_",
-               dirs[0], smolvm.GUEST_CLAUDE_STATE, str(len(dirs) - 1), *dirs[1:], *claude_args]
+               dirs[0], smolvm.GUEST_CLAUDE_STATE, f".venv-{smolvm.VM}",
+               str(len(dirs) - 1), *dirs[1:], *claude_args]
         if smolvm.DRY_RUN:
             return smolvm.run(*cmd)[0]
         started = time.time() - 2   # allow for coarse file timestamps

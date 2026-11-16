@@ -145,9 +145,10 @@ directory, not `~/.claude`.
 
 The guest has `uv`, `make` and `shellcheck` for running a project's own
 checks. The attached directory is shared with the host, whose `.venv` points
-at the host's Python, so sessions set `UV_PROJECT_ENVIRONMENT=.venv-kelder`:
-`uv run` in the guest builds and uses `.venv-kelder` in each project and leaves
-`.venv` to the host.
+at the host's Python, so sessions set `UV_PROJECT_ENVIRONMENT` to `.venv-`
+followed by the machine's name (`.venv-kelder` in the default machine):
+`uv run` in the guest builds and uses that environment in each project and
+leaves `.venv` to the host. Each machine gets its own.
 
 In the guest:
 
