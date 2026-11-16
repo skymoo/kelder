@@ -17,7 +17,7 @@ from .cli import check_dir
 from .smolvm import die
 
 
-def run():
+def run() -> None:
     smolvm.VM = vm = smolvm.env("VM", "kelder-test")
     if vm == "kelder":
         die("refusing to test in the main machine 'kelder'")

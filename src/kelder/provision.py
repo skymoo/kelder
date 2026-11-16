@@ -122,16 +122,16 @@ chmod 700 "$state"   # cp -a copied the source directory's mode onto it
 """
 
 
-def warn(msg):
+def warn(msg: str) -> None:
     print(f"warning: {msg}", file=sys.stderr)
 
 
-def asroot():
+def asroot() -> list[str]:
     """The prefix that makes a guest command run as root."""
     return [] if guest("id", "-u", capture="out")[1].strip() == "0" else ["sudo"]
 
 
-def update_guest(quiet=False):
+def update_guest(quiet: bool = False) -> tuple[int, str]:
     """Bring the guest up to date and record when.
 
     Upgrades its packages, installs any missing from PACKAGES, installs or
@@ -152,7 +152,7 @@ def update_guest(quiet=False):
     return 0, ""
 
 
-def update_if_stale():
+def update_if_stale() -> None:
     """Update the guest if its last update is over UPDATE_DAYS old or unknown.
 
     Called when a session boots the machine. NO_UPDATE=1 skips it; a failed
@@ -175,7 +175,7 @@ def update_if_stale():
         note(f"update failed (exit {rc}); starting the session anyway. Its last output:\n{tail}")
 
 
-def host_checks():
+def host_checks() -> None:
     if not os.path.exists("/dev/kvm"):
         die("/dev/kvm not found on the host")
     nested = ""
@@ -191,7 +191,7 @@ def host_checks():
         die("smolvm 1.32 or newer is needed (kelder uses 'smolvm machine mount')")
 
 
-def host_timezone():
+def host_timezone() -> str:
     """The host's timezone name, or "" if it can't be worked out."""
     # timedatectl first; /etc/localtime's target as a fallback for hosts
     # without systemd.
@@ -209,7 +209,7 @@ def host_timezone():
     return target.split("zoneinfo/", 1)[1] if "zoneinfo/" in target else ""
 
 
-def run():
+def run() -> None:
     vm = smolvm.VM
     state = smolvm.GUEST_CLAUDE_STATE
     image_set = "IMAGE" in os.environ

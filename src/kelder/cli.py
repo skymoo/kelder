@@ -19,6 +19,8 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from types import FrameType
+from typing import NoReturn
 
 from . import smolvm
 from .session import Session
@@ -99,7 +101,7 @@ exec claude "${extra[@]/#/--add-dir=}" "$@"
 """
 
 
-def parse_args(args):
+def parse_args(args: list[str]) -> tuple[str, str, list[str], list[str]]:
     """Split the command line into (command, primary dir, extra dirs, claude's args).
 
     command is "run" or one of COMMANDS.
@@ -137,7 +139,7 @@ def parse_args(args):
     return "run", primary, extra, args
 
 
-def check_dir(path):
+def check_dir(path: str) -> str:
     """Resolve and check a directory to attach; returns its real path."""
     if not os.path.isdir(path):
         die(f"not a directory: {path}")
@@ -152,7 +154,7 @@ def check_dir(path):
     return d
 
 
-def resume_command(dirs, since):
+def resume_command(dirs: list[str], since: float) -> str | None:
     """The kelder command that resumes the session that just ended, or None.
 
     Claude's own hint says `claude --resume ID`, which doesn't work on the
@@ -184,12 +186,12 @@ def resume_command(dirs, since):
     return prefix + shlex.join(command)
 
 
-def _terminate(signum, _frame):
+def _terminate(signum: int, _frame: FrameType | None) -> NoReturn:
     """Turn a fatal signal into an exit, so cleanup still runs."""
     sys.exit(128 + signum)
 
 
-def run_claude(primary, extra, claude_args):
+def run_claude(primary: str, extra: list[str], claude_args: list[str]) -> int:
     """Attach the directories, run claude in the guest, clean up; returns its exit status."""
     dirs = [check_dir(primary)]
     for d in extra:
@@ -227,7 +229,7 @@ def run_claude(primary, extra, claude_args):
         session.cleanup()
 
 
-def main(argv=None):
+def main(argv: list[str] | None = None) -> None:
     command, primary, extra, claude_args = parse_args(sys.argv[1:] if argv is None else argv)
     if command == "help":
         print(USAGE, end="")

@@ -12,12 +12,16 @@ import shutil
 import subprocess
 import sys
 import time
+from typing import Literal, NoReturn
 
 PROG = "kelder"
 HOME = os.path.expanduser("~")
 
+# What run() does with the command's output; see its docstring.
+Capture = Literal["all", "out", "drop"] | None
 
-def env(name, default):
+
+def env(name: str, default: str) -> str:
     """An environment variable, with empty treated as unset."""
     return os.environ.get(name) or default
 
@@ -39,22 +43,22 @@ SMOLVM_BIN = env("SMOLVM_BIN", "smolvm")
 DRY_RUN = os.environ.get("DRY_RUN") == "1"
 
 
-def note(msg):
+def note(msg: str) -> None:
     print(f"{PROG}: {msg}", file=sys.stderr)
 
 
-def die(msg):
+def die(msg: str) -> NoReturn:
     note(msg)
     sys.exit(1)
 
 
-def require():
+def require() -> None:
     """Fail unless the smolvm binary is on PATH."""
     if not DRY_RUN and shutil.which(SMOLVM_BIN) is None:
         die(f"{SMOLVM_BIN} not found on PATH")
 
 
-def run(*args, capture=None):
+def run(*args: str, capture: Capture = None) -> tuple[int, str]:
     """Run smolvm; returns (exit status, captured output).
 
     capture="all" collects stdout and stderr together, "out" collects stdout
@@ -69,28 +73,28 @@ def run(*args, capture=None):
     return p.returncode, p.stdout or ""
 
 
-def guest(*cmd, capture=None):
+def guest(*cmd: str, capture: Capture = None) -> tuple[int, str]:
     """Run a command in the guest without a TTY; returns (exit status, output)."""
     return run("machine", "exec", "--name", VM, "--", *cmd, capture=capture)
 
 
-def guest_ok(*cmd):
+def guest_ok(*cmd: str) -> bool:
     """True if the command succeeds in the guest; its output is discarded."""
     return guest(*(cmd or ("true",)), capture="all")[0] == 0
 
 
-def exists():
+def exists() -> bool:
     """True if the machine exists, running or not."""
     # `machine status` exits 0 for a running or stopped machine and fails for
     # an unknown one (checked against the smolvm v1.34.4 source).
     return run("machine", "status", "--name", VM, capture="all")[0] == 0
 
 
-def running():
+def running() -> bool:
     return "': running" in run("machine", "status", "--name", VM, capture="all")[1]
 
 
-def start():
+def start() -> bool:
     """Start the machine if needed, then wait until it accepts exec.
 
     Returns True if this call booted it, False if it was already running.
@@ -110,7 +114,7 @@ def start():
     die(f"machine '{VM}' started but did not answer exec within 30s")
 
 
-def stop():
+def stop() -> bool:
     return run("machine", "stop", "--name", VM, capture="drop")[0] == 0
 
 
@@ -118,14 +122,14 @@ def stop():
 # have on the host (`machine mount`, smolvm 1.32+). Attachments last until the
 # machine stops.
 
-def attached(d):
+def attached(d: str) -> bool:
     rc, out = run("machine", "mount", "ls", "--name", VM, capture="out")
     return rc == 0 and f"{d} -> {d}" in out.splitlines()
 
 
-def attach(d):
+def attach(d: str) -> bool:
     return run("machine", "mount", "add", "--name", VM, "-v", f"{d}:{d}", capture="drop")[0] == 0
 
 
-def detach(d):
+def detach(d: str) -> bool:
     return run("machine", "mount", "rm", "--name", VM, "-t", d, capture="drop")[0] == 0

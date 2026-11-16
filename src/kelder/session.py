@@ -10,7 +10,9 @@ this between concurrent kelder runs.
 import fcntl
 import hashlib
 import os
+from collections.abc import Callable
 from pathlib import Path
+from typing import Protocol
 
 from . import smolvm
 from .smolvm import die, note
@@ -18,13 +20,23 @@ from .smolvm import die, note
 BUSY = "only one set of directories can be attached at a time (use VM=<name> for another machine)"
 
 
-def state_dir():
+def state_dir() -> Path:
     base = smolvm.env("XDG_RUNTIME_DIR", os.path.join(smolvm.HOME, ".cache"))
     return Path(base) / "kelder" / smolvm.VM
 
 
-def _open(path):
+def _open(path: str | os.PathLike[str]) -> int:
     return os.open(path, os.O_WRONLY | os.O_CREAT, 0o666)
+
+
+class Machine(Protocol):
+    """What a Session needs from the machine: the smolvm module, or a stand-in."""
+
+    def start(self) -> bool: ...
+    def stop(self) -> bool: ...
+    def attached(self, d: str) -> bool: ...
+    def attach(self, d: str) -> bool: ...
+    def detach(self, d: str) -> bool: ...
 
 
 class Session:
@@ -35,19 +47,20 @@ class Session:
     machine, before anything is attached and while other sessions wait.
     """
 
-    def __init__(self, dirs, state=None, vm=smolvm, on_boot=None):
+    def __init__(self, dirs: list[str], state: str | os.PathLike[str] | None = None,
+                 vm: Machine = smolvm, on_boot: Callable[[], None] | None = None) -> None:
         self.dirs = dirs
         self.vm = vm
         self.on_boot = on_boot
         self.state = Path(state) if state else state_dir()
         self.state.mkdir(parents=True, exist_ok=True)
         self.glock = _open(self.state / ".lock")
-        self.mylocks = []
+        self.mylocks: list[int] = []
 
-    def _key(self, d):
+    def _key(self, d: str) -> Path:
         return self.state / hashlib.sha256(d.encode()).hexdigest()[:16]
 
-    def sweep(self, only_free=False, fatal=True):
+    def sweep(self, only_free: bool = False, fatal: bool = True) -> None:
         """Detach directories no session is using.
 
         With only_free, stop there; otherwise also fail unless the directories
@@ -81,7 +94,7 @@ class Session:
         if used and any(d not in used for d in self.dirs):
             die(f"another kelder session is using {' '.join(used)}; {BUSY}")
 
-    def attach(self):
+    def attach(self) -> None:
         """Start the machine, attach this session's directories and lock them."""
         fcntl.flock(self.glock, fcntl.LOCK_EX)
         try:
@@ -102,7 +115,7 @@ class Session:
         finally:
             fcntl.flock(self.glock, fcntl.LOCK_UN)
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         """Release this session's directories; stop the machine if it was the last."""
         for fd in self.mylocks:
             os.close(fd)
