@@ -188,6 +188,30 @@ the `smolvm` calls made and the environment `claude` would get. They are
 plain `unittest` tests, so `PYTHONPATH=src python3 -m unittest discover -s
 tests` runs them without uv.
 
+## Releasing
+
+With `X.Y.Z` as the new version, from an up-to-date `main`:
+
+```sh
+uv version X.Y.Z
+uv run git-cliff --unreleased --tag vX.Y.Z --prepend CHANGELOG.md
+git commit -am "chore(release): bump version to X.Y.Z"
+git tag -a vX.Y.Z -m "kelder X.Y.Z"
+git push origin main vX.Y.Z
+```
+
+- `uv version` sets the version in `pyproject.toml` and `uv.lock`. Choose
+  the number by hand: while the version is 0.0.x anything may change in a
+  patch release, from 0.1.0 a minor bump means a breaking change, and
+  from 1.0 the project follows semantic versioning.
+- `git-cliff` adds one section to `CHANGELOG.md` for the commits since the
+  last tag, under the header, and leaves the earlier sections as they
+  are. Only `feat`, `fix`, `refactor` and `perf` commits are listed (see
+  `cliff.toml`), so the release commit itself never appears.
+- Pushing the tag starts the Release workflow, which fails unless the tag
+  is the version in `pyproject.toml` prefixed with `v`, then builds the
+  distributions and publishes them to PyPI.
+
 ## Quirks found while setting this up
 
 **Nested VMs must boot with UEFI.** Under smolvm's nested KVM (AMD host), a
