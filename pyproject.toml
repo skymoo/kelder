@@ -12,6 +12,10 @@ dependencies = []
 [project.scripts]
 kelder = "kelder.cli:main"
 
+[project.urls]
+Repository = "https://github.com/skymoo/kelder"
+Issues = "https://github.com/skymoo/kelder/issues"
+
 [dependency-groups]
 dev = [
     "pytest==9.2.0",
