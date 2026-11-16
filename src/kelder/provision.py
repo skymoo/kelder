@@ -5,7 +5,9 @@
 Run it as `kelder self setup`. Safe to re-run: it updates packages,
 config and testvm on an existing machine. The machine has no project
 mounted; kelder attaches one when it runs. Claude's state lives on the
-host in $CLAUDE_STATE, so the machine is disposable.
+host in $CLAUDE_STATE, so the machine is disposable. Run from a project
+with a .kelder.toml, it sets up that project's machine and installs the
+packages the file lists.
 
   VM=name IMAGE=debian kelder self setup   machine name / base image
 """
@@ -131,17 +133,17 @@ def asroot() -> list[str]:
     return [] if guest("id", "-u", capture="out")[1].strip() == "0" else ["sudo"]
 
 
-def update_guest(quiet: bool = False) -> tuple[int, str]:
+def update_guest(quiet: bool = False, extra: list[str] | None = None) -> tuple[int, str]:
     """Bring the guest up to date and record when.
 
-    Upgrades its packages, installs any missing from PACKAGES, installs or
+    Upgrades its packages, installs any missing from PACKAGES and extra, installs or
     updates uv, and updates Claude Code if it is installed. Returns (exit status, output) of the first step to fail,
     or (0, "") with the time recorded; the output is only collected when quiet.
     """
     capture = "all" if quiet else None
     root = asroot()
     for cmd in (
-        [*root, "bash", "-c", APT, "_", *PACKAGES],
+        [*root, "bash", "-c", APT, "_", *PACKAGES, *(extra or [])],
         ["bash", "-c", UV],   # as the session's user, like Claude Code
         ["bash", "-c", UPDATE_CLAUDE],
         [*root, "bash", "-c", WRITE_STAMP, "_", STAMP],
@@ -209,7 +211,8 @@ def host_timezone() -> str:
     return target.split("zoneinfo/", 1)[1] if "zoneinfo/" in target else ""
 
 
-def run() -> None:
+def run(packages: list[str] | None = None) -> None:
+    """Create and provision the machine; packages are a project's extra ones."""
     vm = smolvm.VM
     state = smolvm.GUEST_CLAUDE_STATE
     image_set = "IMAGE" in os.environ
@@ -252,7 +255,9 @@ def run() -> None:
 
     # --- packages ------------------------------------------------------------
     print("Updating the guest: packages, uv and Claude Code...")
-    if update_guest()[0] != 0:
+    if packages:
+        print(f"Extra packages for this project: {' '.join(packages)}")
+    if update_guest(extra=packages)[0] != 0:
         die("could not update the guest")
     root = asroot()
 

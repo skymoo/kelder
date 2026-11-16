@@ -8,7 +8,8 @@ claude. `kelder -- self ...` gives claude a prompt starting with "self".
 Each directory is attached at the same path it has on the host and detached
 when the last session using it exits. Only one set of directories is attached
 at a time, so Claude never sees a project it wasn't given; a second session
-for a different set is refused (use VM=<name> to run it in a separate machine).
+for a different set is refused (a project's .kelder.toml, or VM=<name>, runs it
+in a separate machine).
 """
 import importlib.metadata
 import os
@@ -22,7 +23,7 @@ from pathlib import Path
 from types import FrameType
 from typing import NoReturn
 
-from . import smolvm
+from . import config, smolvm
 from .session import Session
 from .smolvm import die, note
 
@@ -49,9 +50,13 @@ Commands (after self):
 Every other argument is passed to claude unchanged; run
 `kelder --help` for Claude Code's options.
 
+Project file (.kelder.toml in DIR):
+  vm = "NAME"         the smolvm machine this project runs in
+  packages = [...]    extra packages self setup installs in it
+
 Environment:
-  VM            smolvm machine name (default: kelder; kelder-test for
-                self smoketest)
+  VM            smolvm machine name; overrides the project file
+                (default: kelder; kelder-test for self smoketest)
   CLAUDE_STATE  Claude's state directory on the host
                 (default: ~/.local/share/kelder/claude)
   IMAGE         base image for a new machine (self setup;
@@ -98,6 +103,13 @@ export UV_PROJECT_ENVIRONMENT=.venv-kelder
 export UV_LINK_MODE=copy
 command -v claude >/dev/null || { echo "kelder: claude is not installed in the guest; run kelder self setup" >&2; exit 127; }
 exec claude "${extra[@]/#/--add-dir=}" "$@"
+"""
+
+# Prints each of the packages given that isn't installed in the guest.
+MISSING_PACKAGES = """
+for p in "$@"; do
+  [[ $(dpkg-query -W -f '${db:Status-Status}' "$p" 2>/dev/null) == installed ]] || echo "$p"
+done
 """
 
 
@@ -154,12 +166,13 @@ def check_dir(path: str) -> str:
     return d
 
 
-def resume_command(dirs: list[str], since: float) -> str | None:
+def resume_command(dirs: list[str], since: float, default_vm: str = "kelder") -> str | None:
     """The kelder command that resumes the session that just ended, or None.
 
     Claude's own hint says `claude --resume ID`, which doesn't work on the
     host. The ID is the name of the newest transcript written since `since`
-    in the state directory's folder for the primary directory.
+    in the state directory's folder for the primary directory. default_vm is
+    the machine the primary directory gets when VM isn't set.
     """
     projects = Path(smolvm.CLAUDE_STATE) / "projects"
     # Claude names the folder after the directory with other characters
@@ -182,7 +195,7 @@ def resume_command(dirs: list[str], since: float) -> str | None:
     for d in dirs[1:]:
         options += ["-a", d]
     command = ["kelder", *(["self", *options, "--"] if options else []), "--resume", newest[1]]
-    prefix = f"VM={shlex.quote(smolvm.VM)} " if smolvm.VM != "kelder" else ""
+    prefix = f"VM={shlex.quote(smolvm.VM)} " if smolvm.VM != default_vm else ""
     return prefix + shlex.join(command)
 
 
@@ -191,8 +204,21 @@ def _terminate(signum: int, _frame: FrameType | None) -> NoReturn:
     sys.exit(128 + signum)
 
 
-def run_claude(primary: str, extra: list[str], claude_args: list[str]) -> int:
-    """Attach the directories, run claude in the guest, clean up; returns its exit status."""
+def note_missing(cfg: config.Config) -> None:
+    """Say which of the project's packages the machine lacks; setup installs them."""
+    missing = smolvm.guest("bash", "-c", MISSING_PACKAGES, "_", *cfg.packages, capture="out")[1].split()
+    if missing:
+        note(f"machine '{smolvm.VM}' lacks packages listed in {cfg.path}: {' '.join(missing)}; "
+             "run 'kelder self setup' to install them")
+
+
+def run_claude(primary: str, extra: list[str], claude_args: list[str],
+               cfg: config.Config | None = None) -> int:
+    """Attach the directories, run claude in the guest, clean up; returns its exit status.
+
+    cfg is the primary directory's project file, if it has one.
+    """
+    cfg = cfg or config.Config()
     dirs = [check_dir(primary)]
     for d in extra:
         d = check_dir(d)
@@ -210,6 +236,8 @@ def run_claude(primary: str, extra: list[str], claude_args: list[str]) -> int:
     # Let Ctrl-C reach Claude; kelder itself keeps going so cleanup still runs.
     signal.signal(signal.SIGINT, lambda *_: None)
     try:
+        if cfg.packages:
+            note_missing(cfg)
         # Only ask for a TTY when there is one, so `kelder -p ... | less` and scripts work.
         flags = ["-i"]
         if sys.stdin.isatty() and sys.stdout.isatty():
@@ -221,7 +249,7 @@ def run_claude(primary: str, extra: list[str], claude_args: list[str]) -> int:
         started = time.time() - 2   # allow for coarse file timestamps
         rc = subprocess.call([smolvm.SMOLVM_BIN, *cmd])
         if "-t" in flags:
-            resume = resume_command(dirs, started)
+            resume = resume_command(dirs, started, cfg.vm or "kelder")
             if resume:
                 note(f"resume with: {resume}")
         return 128 - rc if rc < 0 else rc   # negative: killed by a signal
@@ -238,11 +266,18 @@ def main(argv: list[str] | None = None) -> None:
         print("kelder", importlib.metadata.version("kelder"))
         sys.exit(0)
     smolvm.require()
-    if command == "setup":
-        from . import provision
-        provision.run()
-    elif command == "smoketest":
+    if command == "smoketest":
         from . import smoketest
         smoketest.run()
+        return
+    # The project file names the machine unless VM does.
+    cfg = config.load(primary)
+    if cfg.vm and not smolvm.env("VM", ""):
+        smolvm.VM = cfg.vm
+    if command == "setup":
+        from . import provision
+        if cfg.path:
+            print(f"Using {cfg.path} for machine '{smolvm.VM}'.")
+        provision.run(cfg.packages)
     else:
-        sys.exit(run_claude(primary, extra, claude_args))
+        sys.exit(run_claude(primary, extra, claude_args, cfg))

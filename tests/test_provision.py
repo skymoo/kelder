@@ -74,6 +74,12 @@ class Provision(unittest.TestCase):
         })
         self.assertIn(["bash", "-c", provision.SET_TIMEZONE, "_", "Europe/London"], commands)
 
+    def test_setup_installs_a_projects_extra_packages(self):
+        out = self.run_quietly(lambda: provision.run(["ansible-lint", "ldap-utils"]))
+        self.assertIn("Extra packages for this project: ansible-lint ldap-utils", out)
+        apt = next(c for c in self.guest_commands() if c[2:3] == [provision.APT])
+        self.assertEqual(apt[4:], [*provision.PACKAGES, "ansible-lint", "ldap-utils"])
+
     def test_setup_reuses_an_existing_machine(self):
         with mock.patch.dict(os.environ, {"IMAGE": "ubuntu"}):
             os.environ.pop("FAKE_SMOLVM_FRESH")
@@ -126,6 +132,7 @@ class UpdateIfStale(unittest.TestCase):
                 provision.UPDATE_CLAUDE: "claude", provision.WRITE_STAMP: "stamp"}[cmd[2]]
         self.ran.append(step)
         if step == "apt":
+            self.apt_packages = list(cmd[4:])
             return self.update_rc, "line one\nE: something broke\n"
         if step == "uv":
             return self.uv_rc, "error: uv could not update\n"
@@ -149,6 +156,7 @@ class UpdateIfStale(unittest.TestCase):
         self.days_ago(9.5)
         self.assertIn("updating machine 'fake' (last updated 9 days ago)...", self.run_it())
         self.assertEqual(self.ran, ["apt", "uv", "claude", "stamp"])
+        self.assertEqual(self.apt_packages, provision.PACKAGES)   # never a project's extras
 
     def test_machine_with_no_record_is_updated(self):
         self.assertIn("(no record of an update)", self.run_it())

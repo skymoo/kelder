@@ -20,6 +20,7 @@ installing.
 ```text
 src/kelder/cli.py          the kelder command: arguments, running claude in the guest
 src/kelder/session.py      which directories are attached, and by which sessions
+src/kelder/config.py       a project's .kelder.toml
 src/kelder/smolvm.py       settings and every smolvm CLI assumption
 src/kelder/provision.py    create and provision the guest (kelder self setup)
 src/kelder/smoketest.py    test a smolvm upgrade (kelder self smoketest)
@@ -72,10 +73,33 @@ Everything else is passed unchanged to `claude` in the guest, so `-p`,
 `--resume`, `--continue`, `--model` and the rest are Claude Code's own
 options (see `kelder --help`, which shows `claude --help`).
 
+A project can have a `.kelder.toml` in the directory Claude starts in:
+
+```toml
+vm = "homelab"
+packages = [
+    "ansible-lint",
+    "zfsutils-linux",
+]
+```
+
+- `vm`: the smolvm machine this project runs in, instead of `kelder`.
+  Projects with different machines can have sessions open at the same
+  time. Each machine is set up once, with `kelder self setup` run from
+  the project.
+- `packages`: extra Debian packages `kelder self setup`, run from the
+  project, installs in that machine. Only setup installs them: after
+  adding one, run setup again. A session in a machine that lacks any of
+  them says so and starts anyway. Projects that share a machine each add
+  their own; a package taken off the list stays installed.
+
+Both keys are optional. Only the directory Claude starts in is checked: a
+file in a directory above it, or in one added with `-a`, is ignored.
+
 These environment variables set by the host also change how it behaves:
 
-- `VM=<name>`: the smolvm machine to use (default `kelder`); also read by
-  `kelder self setup`.
+- `VM=<name>`: the smolvm machine to use (default `kelder`), overriding
+  the project's `.kelder.toml`; also read by `kelder self setup`.
 - `CLAUDE_STATE=<dir>`: where Claude's state lives on the host (default
   `~/.local/share/kelder/claude`).
 - `IMAGE=<image>`: base image for `kelder self setup` (default `debian`).
@@ -86,9 +110,9 @@ One machine serves every project. `kelder` starts it if needed and
 attaches each directory to it (`smolvm machine mount add`) at the same path
 it has on the host, and detaches it when the last session using it exits. Only
 one set of directories is attached at a time: a session for a different set is
-refused while another is open, since mounts are visible machine-wide (use
-`VM=<name>` for a second machine). A session that crashes leaves its
-directories attached until the next run cleans them up.
+refused while another is open, since mounts are visible machine-wide (give
+the project its own machine in `.kelder.toml`, or use `VM=<name>`). A session
+that crashes leaves its directories attached until the next run cleans them up.
 
 The session that boots the machine also keeps it up to date: if the guest
 was last updated more than a week ago, it upgrades the packages, uv and

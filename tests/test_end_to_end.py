@@ -116,6 +116,36 @@ class EndToEnd(unittest.TestCase):
         self.assertEqual(rc, 1)
         self.assertIn("machine 'fake' does not exist; run 'kelder self setup' first", out)
 
+    def test_project_file_names_the_machine_unless_vm_is_set(self):
+        (self.tmp / "proj/.kelder.toml").write_text('vm = "mine"\n')
+        rc, out = self.run_sc("hello", VM="")
+        self.assertEqual(rc, 0, out)
+        self.assertIn(f"machine mount add --name mine -v {self.tmp}/proj:{self.tmp}/proj",
+                      self.calls())
+        self.assertNotIn("--name fake", self.calls())
+        self.trace.write_text("")
+        rc, out = self.run_sc("hello")
+        self.assertEqual(rc, 0, out)
+        self.assertNotIn("--name mine", self.calls())
+
+    def test_missing_project_packages_are_reported_not_installed(self):
+        (self.tmp / "proj/.kelder.toml").write_text('packages = ["have", "lack"]\n')
+        (self.tmp / "bin/dpkg-query").write_text(
+            '#!/bin/sh\nfor p; do :; done\n[ "$p" = have ] && printf installed\n')
+        (self.tmp / "bin/dpkg-query").chmod(0o755)
+        rc, out = self.run_sc("hello")
+        self.assertEqual(rc, 0, out)
+        self.assertIn(f"machine 'fake' lacks packages listed in {self.tmp}/proj/.kelder.toml: lack; "
+                      "run 'kelder self setup' to install them", out)
+        self.assertNotIn("apt-get", self.calls())
+
+    def test_invalid_project_file_stops_the_session(self):
+        (self.tmp / "proj/.kelder.toml").write_text('vm = "-x"\n')
+        rc, out = self.run_sc("hello")
+        self.assertEqual(rc, 1)
+        self.assertIn("vm must be a machine name", out)
+        self.assertEqual(self.calls(), "")
+
     def test_concurrent_sessions(self):
         release = self.tmp / "release"
         first = subprocess.Popen(self.command("-p", "hold", str(release)), cwd=self.tmp / "proj",

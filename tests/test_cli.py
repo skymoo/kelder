@@ -121,6 +121,14 @@ class ResumeCommand(unittest.TestCase):
             self.assertEqual(cli.resume_command([self.proj, "/x y"], self.now - 10),
                              f"VM=kelder-test kelder self -C {self.proj} -a '/x y' -- --resume abc")
 
+    def test_machine_from_the_project_file_needs_no_prefix(self):
+        self.transcript("abc", age=1)
+        with mock.patch.object(smolvm, "VM", "homelab"):
+            self.assertEqual(cli.resume_command([self.proj], self.now - 10, "homelab"),
+                             "kelder --resume abc")
+            self.assertEqual(cli.resume_command([self.proj], self.now - 10, "other"),
+                             "VM=homelab kelder --resume abc")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -17,7 +17,8 @@ from typing import Protocol
 from . import smolvm
 from .smolvm import die, note
 
-BUSY = "only one set of directories can be attached at a time (use VM=<name> for another machine)"
+BUSY = ("only one set of directories can be attached at a time "
+        "(set vm in the project's .kelder.toml, or VM=<name>, for another machine)")
 
 
 def state_dir() -> Path:
