@@ -90,7 +90,7 @@ class ResumeCommand(unittest.TestCase):
         os.makedirs(self.proj)
         self.folder = os.path.join(self.tmp, "state/projects", re.sub(r"[^A-Za-z0-9]", "-", self.proj))
         os.makedirs(self.folder)
-        patch = mock.patch.multiple(smolvm, VM="smol", CLAUDE_STATE=os.path.join(self.tmp, "state"))
+        patch = mock.patch.multiple(smolvm, VM="kelder", CLAUDE_STATE=os.path.join(self.tmp, "state"))
         patch.start()
         self.addCleanup(patch.stop)
         old = os.getcwd()
@@ -117,9 +117,9 @@ class ResumeCommand(unittest.TestCase):
     def test_other_machine_and_directories(self):
         self.transcript("abc", age=1)
         os.chdir(self.tmp)
-        with mock.patch.object(smolvm, "VM", "smol-test"):
+        with mock.patch.object(smolvm, "VM", "kelder-test"):
             self.assertEqual(cli.resume_command([self.proj, "/x y"], self.now - 10),
-                             f"VM=smol-test kelder self -C {self.proj} -a '/x y' -- --resume abc")
+                             f"VM=kelder-test kelder self -C {self.proj} -a '/x y' -- --resume abc")
 
 
 if __name__ == "__main__":

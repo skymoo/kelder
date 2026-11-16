@@ -74,7 +74,7 @@ options (see `kelder --help`, which shows `claude --help`).
 
 These environment variables set by the host also change how it behaves:
 
-- `VM=<name>`: the smolvm machine to use (default `smol`); also read by
+- `VM=<name>`: the smolvm machine to use (default `kelder`); also read by
   `kelder self setup`.
 - `CLAUDE_STATE=<dir>`: where Claude's state lives on the host (default
   `~/.local/share/kelder/claude`).
@@ -92,7 +92,7 @@ directories attached until the next run cleans them up.
 
 The session that boots the machine also keeps it up to date: if the guest
 was last updated more than a week ago, it upgrades the packages, uv and
-Claude Code before starting Claude (`kelder: updating machine 'smol'
+Claude Code before starting Claude (`kelder: updating machine 'kelder'
 ...`), which can take a minute. A failed update is reported and the session
 starts anyway.
 `kelder self setup` does the same update whenever it runs.
@@ -121,8 +121,8 @@ directory, not `~/.claude`.
 
 The guest has `uv`, `make` and `shellcheck` for running a project's own
 checks. The attached directory is shared with the host, whose `.venv` points
-at the host's Python, so sessions set `UV_PROJECT_ENVIRONMENT=.venv-smol`:
-`uv run` in the guest builds and uses `.venv-smol` in each project and leaves
+at the host's Python, so sessions set `UV_PROJECT_ENVIRONMENT=.venv-kelder`:
+`uv run` in the guest builds and uses `.venv-kelder` in each project and leaves
 `.venv` to the host.
 
 In the guest:
@@ -136,16 +136,16 @@ podman run --rm docker.io/library/debian:trixie ...          # use full image na
 
 ## Testing a smolvm upgrade
 
-Exit every kelder session so `smol` is stopped, upgrade smolvm, then run
+Exit every kelder session so `kelder` is stopped, upgrade smolvm, then run
 `kelder self smoketest` from a project directory. It creates a throwaway
-`smol-test` machine (`VM=<name>` picks another name), runs the guest's
+`kelder-test` machine (`VM=<name>` picks another name), runs the guest's
 `smoketest` in it with the current directory attached, checks the smolvm
 behaviour relied on (see below) from the host, and deletes the machine if
 everything passed. FAIL means the upgrade broke something kelder needs;
 KNOWN is a smolvm bug the guest config works around; CHANGED means that bug
 is gone and its workaround may be removable.
 
-A machine that fails is kept for inspection. If `smol` itself stops starting
+A machine that fails is kept for inspection. If `kelder` itself stops starting
 after an upgrade, keep it too and create the replacement under another name.
 
 ## Development

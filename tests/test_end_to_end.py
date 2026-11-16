@@ -77,7 +77,7 @@ class EndToEnd(unittest.TestCase):
         self.assertIn(f"CLAUDE_CONFIG_DIR={self.tmp}/state", out)
         self.assertIn("ANTHROPIC_API_KEY=unset", out)
         self.assertIn("ANTHROPIC_AUTH_TOKEN=unset", out)
-        self.assertIn("UV_PROJECT_ENVIRONMENT=.venv-smol", out)
+        self.assertIn("UV_PROJECT_ENVIRONMENT=.venv-kelder", out)
         self.assertIn("UV_LINK_MODE=copy", out)
         self.assertIn(f"argv: --add-dir={self.tmp}/extra -p hi", out)
         self.assertIn(f"cwd={self.tmp}/proj", out)

@@ -8,7 +8,7 @@ attached, checks the smolvm CLI behaviour kelder relies on, and deletes
 the machine if everything passed. A machine that failed is kept for
 inspection.
 
-  VM=name kelder self smoketest   picks the machine (default: smol-test)
+  VM=name kelder self smoketest   picks the machine (default: kelder-test)
 """
 import sys
 
@@ -18,9 +18,9 @@ from .smolvm import die
 
 
 def run():
-    smolvm.VM = vm = smolvm.env("VM", "smol-test")
-    if vm == "smol":
-        die("refusing to test in the main machine 'smol'")
+    smolvm.VM = vm = smolvm.env("VM", "kelder-test")
+    if vm == "kelder":
+        die("refusing to test in the main machine 'kelder'")
     if not smolvm.DRY_RUN and smolvm.exists():
         die(f"machine '{vm}' already exists; delete it first (smolvm machine delete --name {vm})")
     d = check_dir(".")

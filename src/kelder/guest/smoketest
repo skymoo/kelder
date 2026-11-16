@@ -5,8 +5,8 @@
 # smoketest: check, from inside the guest, the smolvm behaviours kelder
 # relies on. Run it in a throwaway machine after upgrading smolvm:
 #
-#   VM=smol-test kelder self setup
-#   VM=smol-test kelder     then, in that session: smoketest [DIR]
+#   VM=kelder-test kelder self setup
+#   VM=kelder-test kelder     then, in that session: smoketest [DIR]
 #
 # DIR is an attached host directory (default: the current directory).
 # PASS/FAIL lines are behaviour kelder needs; KNOWN lines are smolvm bugs

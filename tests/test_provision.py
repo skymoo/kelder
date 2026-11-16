@@ -83,21 +83,21 @@ class Provision(unittest.TestCase):
         self.assertFalse(any(c[:2] == ["machine", "create"] for c in self.calls()))
 
     def test_smoketest_refuses_the_main_machine(self):
-        with mock.patch.dict(os.environ, {"VM": "smol"}), self.assertRaises(SystemExit):
+        with mock.patch.dict(os.environ, {"VM": "kelder"}), self.assertRaises(SystemExit):
             self.run_quietly(smoketest.run)
         self.assertFalse(self.trace.exists())
 
     def test_smoketest_uses_a_throwaway_machine_and_deletes_it(self):
         with _chdir(self.tmp / "home/proj"):
             out = self.run_quietly(smoketest.run)
-        self.assertEqual(smolvm.VM, "smol-test")
-        self.assertIn(["machine", "mount", "add", "--name", "smol-test", "-v",
+        self.assertEqual(smolvm.VM, "kelder-test")
+        self.assertIn(["machine", "mount", "add", "--name", "kelder-test", "-v",
                        f"{self.tmp}/home/proj:{self.tmp}/home/proj"], self.calls())
         self.assertIn(["bash", "-lc", 'smoketest "$1"', "_", f"{self.tmp}/home/proj"],
                       self.guest_commands())
         self.assertIn("PASS     host: machine status fails for an unknown machine", out)
         self.assertIn("PASS     host: machine start succeeds on a running machine", out)
-        self.assertEqual(self.calls()[-1], ["machine", "delete", "--name", "smol-test", "-f"])
+        self.assertEqual(self.calls()[-1], ["machine", "delete", "--name", "kelder-test", "-f"])
 
 
 class UpdateIfStale(unittest.TestCase):

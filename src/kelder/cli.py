@@ -48,7 +48,7 @@ Every other argument is passed to claude unchanged; run
 `kelder --help` for Claude Code's options.
 
 Environment:
-  VM            smolvm machine name (default: smol; smol-test for
+  VM            smolvm machine name (default: kelder; kelder-test for
                 self smoketest)
   CLAUDE_STATE  Claude's state directory on the host
                 (default: ~/.local/share/kelder/claude)
@@ -90,7 +90,7 @@ done
 export GIT_CONFIG_COUNT=$i
 # The directory is shared with the host, whose .venv points at the host's
 # Python. Give uv in the guest an environment of its own in each project.
-export UV_PROJECT_ENVIRONMENT=.venv-smol
+export UV_PROJECT_ENVIRONMENT=.venv-kelder
 # uv's cache is on the guest's disk and the environment is in the attached
 # directory, so it can never hard-link between them; copy without warning.
 export UV_LINK_MODE=copy
@@ -180,7 +180,7 @@ def resume_command(dirs, since):
     for d in dirs[1:]:
         options += ["-a", d]
     command = ["kelder", *(["self", *options, "--"] if options else []), "--resume", newest[1]]
-    prefix = f"VM={shlex.quote(smolvm.VM)} " if smolvm.VM != "smol" else ""
+    prefix = f"VM={shlex.quote(smolvm.VM)} " if smolvm.VM != "kelder" else ""
     return prefix + shlex.join(command)
 
 

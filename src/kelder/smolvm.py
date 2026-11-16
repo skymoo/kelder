@@ -23,7 +23,7 @@ def env(name, default):
 
 
 # The smolvm machine. `self smoketest` changes it to its throwaway machine.
-VM = env("VM", "smol")
+VM = env("VM", "kelder")
 # Claude's state (login, settings, history, memory) lives on the host so the
 # machine can be thrown away and rebuilt. It is mounted into the machine at
 # boot, and sessions point CLAUDE_CONFIG_DIR at it.
