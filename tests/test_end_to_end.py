@@ -91,6 +91,14 @@ class EndToEnd(unittest.TestCase):
             self.assertIn(f"GIT_CONFIG_KEY_{i}=safe.directory", out.splitlines())
             self.assertIn(f"GIT_CONFIG_VALUE_{i}={value}", out.splitlines())
 
+    def test_git_uses_a_gitignore_in_the_state_directory(self):
+        (self.tmp / "state" / "gitignore").write_text(".claude/settings.local.json\n")
+        rc, out = self.run_sc("hello")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("GIT_CONFIG_COUNT=3", out.splitlines())
+        self.assertIn("GIT_CONFIG_KEY_2=core.excludesFile", out.splitlines())
+        self.assertIn(f"GIT_CONFIG_VALUE_2={self.tmp}/state/gitignore", out.splitlines())
+
     def test_directories_are_attached_then_detached_and_the_machine_stopped(self):
         self.run_sc("hello")
         calls = self.calls()

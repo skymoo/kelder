@@ -131,6 +131,11 @@ Claude's state (login, settings, history, memory) is kept on the host in
 The machine itself is disposable: delete it and run `kelder self setup` to
 rebuild, and nothing is lost. Changing `IMAGE` works the same way.
 
+Git in the machine does not see your global gitignore. Put the patterns
+you want ignored there in a `gitignore` file in the state directory
+(`~/.local/share/kelder/claude/gitignore`); sessions point git's
+`core.excludesFile` at it when it exists.
+
 Sessions start with `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` unset:
 either would outrank the stored login and bill the Console instead of the
 subscription.

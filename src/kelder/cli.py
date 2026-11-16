@@ -95,6 +95,13 @@ for d in "$dir" "${extra[@]}"; do
     i=$((i + 1))
   done
 done
+# The host user's global gitignore is not visible in the guest. A gitignore
+# file in the state directory stands in for it, so files ignored on the
+# host do not show up as untracked here.
+if [[ -f $state/gitignore ]]; then
+  export "GIT_CONFIG_KEY_$i=core.excludesFile" "GIT_CONFIG_VALUE_$i=$state/gitignore"
+  i=$((i + 1))
+fi
 export GIT_CONFIG_COUNT=$i
 # The directory is shared with the host, whose .venv points at the host's
 # Python. Give uv in the guest an environment of its own in each project,
