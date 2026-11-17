@@ -2,6 +2,15 @@
 
 All notable changes to kelder are documented in this file.
 
+## 0.0.3 - 2026-11-16
+
+### Added
+
+- Add per-project .kelder.toml
+- Name guest venv after the machine
+- Use a gitignore from the state dir
+- Add memory key to .kelder.toml
+
 ## 0.0.2 - 2026-11-16
 
 ### Changed
