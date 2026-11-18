@@ -92,24 +92,12 @@ cd "$dir"
 # and would silently bill the Console instead of the subscription.
 unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN
 export PATH="$HOME/.local/bin:$PATH" CLAUDE_CONFIG_DIR=$state
-# The session is root but attached directories belong to the host user, so
-# git would refuse them as "dubious ownership". Mark them, and repositories
-# below them, as safe for this session only.
-i=0
-for d in "$dir" "${extra[@]}"; do
-  for v in "$d" "$d/*"; do
-    export "GIT_CONFIG_KEY_$i=safe.directory" "GIT_CONFIG_VALUE_$i=$v"
-    i=$((i + 1))
-  done
-done
 # The host user's global gitignore is not visible in the guest. A gitignore
 # file in the state directory stands in for it, so files ignored on the
 # host do not show up as untracked here.
 if [[ -f $state/gitignore ]]; then
-  export "GIT_CONFIG_KEY_$i=core.excludesFile" "GIT_CONFIG_VALUE_$i=$state/gitignore"
-  i=$((i + 1))
+  export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.excludesFile "GIT_CONFIG_VALUE_0=$state/gitignore"
 fi
-export GIT_CONFIG_COUNT=$i
 # The directory is shared with the host, whose .venv points at the host's
 # Python. Give uv in the guest an environment of its own in each project,
 # named after the machine: one built in another machine points at that

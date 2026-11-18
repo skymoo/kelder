@@ -74,6 +74,7 @@ class Provision(unittest.TestCase):
             "/usr/local/bin/smoketest": "755",
         })
         self.assertIn(["bash", "-c", provision.SET_TIMEZONE, "_", "Europe/London"], commands)
+        self.assertIn(["git", "config", "--global", "--replace-all", "safe.directory", "*"], commands)
 
     def test_setup_installs_a_projects_extra_packages(self):
         out = self.run_quietly(lambda: provision.run(["ansible-lint", "ldap-utils"]))

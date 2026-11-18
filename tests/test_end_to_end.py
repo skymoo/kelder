@@ -82,22 +82,13 @@ class EndToEnd(unittest.TestCase):
         self.assertIn(f"argv: --add-dir={self.tmp}/extra -p hi", out)
         self.assertIn(f"cwd={self.tmp}/proj", out)
 
-    def test_git_treats_the_attached_directories_as_safe(self):
-        rc, out = self.run_sc("self", "-a", str(self.tmp / "extra"), "--", "hello")
-        self.assertEqual(rc, 0, out)
-        expected = [f"{self.tmp}/proj", f"{self.tmp}/proj/*", f"{self.tmp}/extra", f"{self.tmp}/extra/*"]
-        self.assertIn(f"GIT_CONFIG_COUNT={len(expected)}", out.splitlines())
-        for i, value in enumerate(expected):
-            self.assertIn(f"GIT_CONFIG_KEY_{i}=safe.directory", out.splitlines())
-            self.assertIn(f"GIT_CONFIG_VALUE_{i}={value}", out.splitlines())
-
     def test_git_uses_a_gitignore_in_the_state_directory(self):
         (self.tmp / "state" / "gitignore").write_text(".claude/settings.local.json\n")
         rc, out = self.run_sc("hello")
         self.assertEqual(rc, 0, out)
-        self.assertIn("GIT_CONFIG_COUNT=3", out.splitlines())
-        self.assertIn("GIT_CONFIG_KEY_2=core.excludesFile", out.splitlines())
-        self.assertIn(f"GIT_CONFIG_VALUE_2={self.tmp}/state/gitignore", out.splitlines())
+        self.assertIn("GIT_CONFIG_COUNT=1", out.splitlines())
+        self.assertIn("GIT_CONFIG_KEY_0=core.excludesFile", out.splitlines())
+        self.assertIn(f"GIT_CONFIG_VALUE_0={self.tmp}/state/gitignore", out.splitlines())
 
     def test_a_projects_memory_folder_is_given_to_claude(self):
         (self.tmp / "proj/.kelder.toml").write_text('memory = "work"\n')
@@ -132,6 +123,7 @@ class EndToEnd(unittest.TestCase):
     def test_shell_gets_the_session_without_claude(self):
         (self.tmp / "bin/claude").unlink()
         (self.tmp / "extra/.kelder.toml").write_text('memory = "shared"\n')
+        (self.tmp / "state" / "gitignore").write_text(".venv-*\n")
         script = 'echo "cwd=$PWD"; echo "PATH=$PATH"; echo "UV=$UV_PROJECT_ENVIRONMENT"\n' \
                  'echo "CONFIG=$CLAUDE_CONFIG_DIR"; echo "KEY=${ANTHROPIC_API_KEY-unset}"\n' \
                  'env | grep "^GIT_CONFIG_VALUE_0="\n'
@@ -144,7 +136,7 @@ class EndToEnd(unittest.TestCase):
         self.assertIn("UV=.venv-fake", p.stdout)
         self.assertIn(f"CONFIG={self.tmp}/state", p.stdout)
         self.assertIn("KEY=unset", p.stdout)
-        self.assertIn(f"GIT_CONFIG_VALUE_0={self.tmp}/extra", p.stdout)
+        self.assertIn(f"GIT_CONFIG_VALUE_0={self.tmp}/state/gitignore", p.stdout)
         self.assertNotIn("resume with:", p.stdout)
         calls = self.calls()
         self.assertNotIn("autoMemoryDirectory", calls)

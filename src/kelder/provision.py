@@ -103,6 +103,13 @@ test -e "/usr/share/zoneinfo/$1" &&
   ln -sf "/usr/share/zoneinfo/$1" /etc/localtime && echo "$1" >/etc/timezone
 """
 
+# The session is root but attached directories belong to the host user, so
+# git refuses them as "dubious ownership". Trust every repository: the only
+# ones root does not own are those attached from the host. It is written to
+# the session user's ~/.gitconfig because libgit2, which tools such as
+# git-cliff use in place of git, ignores GIT_CONFIG_* in the environment.
+SAFE_DIRECTORY = ["git", "config", "--global", "--replace-all", "safe.directory", "*"]
+
 CLAUDE_INSTALLED = 'test -x "$HOME/.local/bin/claude"'
 
 # Download first: `curl | bash` without pipefail reports success when curl fails.
@@ -275,6 +282,9 @@ def run(packages: list[str] | None = None) -> None:
             warn(f"could not set the guest timezone to {tz}; leaving it unchanged")
     else:
         warn("could not work out the host timezone; the guest stays on its default")
+
+    if guest(*SAFE_DIRECTORY)[0] != 0:   # as the session's user, like Claude Code
+        die("could not mark repositories as safe for git in the guest")
 
     # --- Claude Code ---------------------------------------------------------
     if not guest_ok("bash", "-c", CLAUDE_INSTALLED):
