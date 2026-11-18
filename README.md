@@ -24,6 +24,7 @@ src/kelder/config.py       a project's .kelder.toml
 src/kelder/smolvm.py       settings and every smolvm CLI assumption
 src/kelder/provision.py    create and provision the guest (kelder self setup)
 src/kelder/smoketest.py    test a smolvm upgrade (kelder self smoketest)
+src/kelder/release.py      fetch a smolvm release to test before upgrading
 src/kelder/guest/          files setup copies into the guest:
   testvm                     throwaway QEMU/KVM VMs (/usr/local/bin)
   smoketest                  checks smolvm behaviour after an upgrade (/usr/local/bin)
@@ -63,7 +64,8 @@ own:
 - `self version`: show `kelder`'s version.
 - `self setup`: create and provision the machine; safe to re-run, it
   updates packages, config and `testvm` on an existing machine.
-- `self smoketest`: test the installed smolvm in a throwaway machine (see
+- `self smoketest`: test the installed smolvm in a throwaway machine; with
+  `--release VERSION`, test that smolvm release without installing it (see
   [Testing a smolvm upgrade](#testing-a-smolvm-upgrade)).
 
 Without `self`, every argument goes to `claude`. To give `claude` a
@@ -186,6 +188,22 @@ is gone and its workaround may be removable.
 
 A machine that fails is kept for inspection. If `kelder` itself stops starting
 after an upgrade, keep it too and create the replacement under another name.
+
+To try a release before upgrading, run `kelder self smoketest --release
+1.35.3` instead. It downloads that release's Linux tarball from GitHub into a
+directory under `/var/tmp`, checks it against the release's
+`checksums.sha256`, and runs the same test with it. The machine lives in
+that directory too, so the installed smolvm and its machines are left
+alone, and the directory is removed if everything passed.
+
+This also works from a session inside the guest (`uv run kelder self
+smoketest --release 1.35.3` in a checkout of this repository), which has
+nested KVM but no smolvm. There the release's "host" is the guest: the test
+machine runs under nested virtualization on the guest's kernel, and its
+network goes through both the release's and the installed smolvm's socket
+proxy. A pass there is good evidence, not proof, and it cannot show whether
+the existing `kelder` machine boots under the new release, so run the
+plain `kelder self smoketest` after the upgrade as well.
 
 ## Development
 

@@ -32,6 +32,7 @@ USAGE = """\
 Usage: kelder [--] [CLAUDE_ARGS...]
        kelder self [-C DIR] [-a DIR]... [--] [CLAUDE_ARGS...]
        kelder self COMMAND
+       kelder self smoketest [--release VERSION]
 
 Run Claude Code in the smolvm guest with DIR (default: the current
 directory) attached at the same path it has on the host. Only arguments
@@ -45,7 +46,9 @@ Options (after self):
 Commands (after self):
   help       show this help
   setup      create and provision the machine (safe to re-run)
-  smoketest  test the installed smolvm in a throwaway machine
+  smoketest  test the installed smolvm in a throwaway machine; with
+             --release VERSION, test that smolvm release instead,
+             without installing it
   version    show kelder's version
 
 Every other argument is passed to claude unchanged; run
@@ -128,7 +131,8 @@ done
 def parse_args(args: list[str]) -> tuple[str, str, list[str], list[str]]:
     """Split the command line into (command, primary dir, extra dirs, claude's args).
 
-    command is "run" or one of COMMANDS.
+    command is "run" or one of COMMANDS; for a command the last item is the
+    command's own arguments.
     """
     # Parsed by hand, not with argparse: most of the command line is claude's,
     # and argparse takes every dash argument as its own. It rejects
@@ -139,7 +143,7 @@ def parse_args(args: list[str]) -> tuple[str, str, list[str], list[str]]:
     if args[:1] == ["self"]:
         sub = args[1] if len(args) > 1 else ""
         if sub in COMMANDS:
-            return sub, primary, extra, []
+            return sub, primary, extra, args[2:]
         if sub not in ("-C", "-a"):
             die(f"unknown command or option 'self {sub}'; see 'kelder self help'")
         args = args[1:]
@@ -285,18 +289,18 @@ def run_claude(primary: str, extra: list[str], claude_args: list[str],
 
 
 def main(argv: list[str] | None = None) -> None:
-    command, primary, extra, claude_args = parse_args(sys.argv[1:] if argv is None else argv)
+    command, primary, extra, rest = parse_args(sys.argv[1:] if argv is None else argv)
     if command == "help":
         print(USAGE, end="")
         sys.exit(0)
     if command == "version":
         print("kelder", importlib.metadata.version("kelder"))
         sys.exit(0)
-    smolvm.require()
     if command == "smoketest":
         from . import smoketest
-        smoketest.run()
+        smoketest.run(rest)
         return
+    smolvm.require()
     # The project file names the machine unless VM does.
     cfg = config.load(primary)
     if cfg.vm and not smolvm.env("VM", ""):
@@ -307,4 +311,4 @@ def main(argv: list[str] | None = None) -> None:
             print(f"Using {cfg.path} for machine '{smolvm.VM}'.")
         provision.run(cfg.packages)
     else:
-        sys.exit(run_claude(primary, extra, claude_args, cfg))
+        sys.exit(run_claude(primary, extra, rest, cfg))

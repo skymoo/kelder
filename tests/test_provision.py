@@ -3,6 +3,7 @@
 """`self setup` and `self smoketest` against tests/fake_smolvm.py, which
 records the calls and runs nothing in a guest."""
 import contextlib
+import functools
 import io
 import json
 import os
@@ -12,7 +13,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from kelder import provision, smoketest, smolvm
+from kelder import provision, release, smoketest, smolvm
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -92,6 +93,24 @@ class Provision(unittest.TestCase):
         with mock.patch.dict(os.environ, {"VM": "kelder"}), self.assertRaises(SystemExit):
             self.run_quietly(smoketest.run)
         self.assertFalse(self.trace.exists())
+
+    def test_smoketest_refuses_arguments_it_does_not_know(self):
+        for args in (["--bogus"], ["--release"], ["--release", "1.2.3", "extra"]):
+            with self.assertRaises(SystemExit):
+                self.run_quietly(functools.partial(smoketest.run, args))
+        self.assertFalse(self.trace.exists())
+
+    def test_smoketest_of_a_release_removes_its_directory(self):
+        made = self.tmp / "release"
+
+        def use(version):
+            made.mkdir()
+            return str(made)
+
+        with _chdir(self.tmp / "home/proj"), mock.patch.object(release, "use", use):
+            out = self.run_quietly(functools.partial(smoketest.run, ["--release", "1.2.3"]))
+        self.assertIn("All checks passed", out)
+        self.assertFalse(made.exists())
 
     def test_smoketest_uses_a_throwaway_machine_and_deletes_it(self):
         with _chdir(self.tmp / "home/proj"):

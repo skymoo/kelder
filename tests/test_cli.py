@@ -42,7 +42,11 @@ class ParseArgs(unittest.TestCase):
 
     def test_commands(self):
         for command in ("help", "setup", "smoketest", "version"):
-            self.assertEqual(cli.parse_args(["self", command])[0], command)
+            self.assertEqual(cli.parse_args(["self", command]), (command, ".", [], []))
+
+    def test_a_command_keeps_its_own_arguments(self):
+        self.assertEqual(cli.parse_args(["self", "smoketest", "--release", "1.2.3"]),
+                         ("smoketest", ".", [], ["--release", "1.2.3"]))
 
     def test_errors(self):
         self.assertIn("unknown command or option 'self bogus'", dies(self, cli.parse_args, ["self", "bogus"]))
