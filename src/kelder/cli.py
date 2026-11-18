@@ -24,7 +24,7 @@ from pathlib import Path
 from types import FrameType
 from typing import NoReturn
 
-from . import config, smolvm
+from . import config, mise, smolvm
 from .session import Session
 from .smolvm import die, note
 
@@ -62,6 +62,9 @@ Project file (.kelder.toml in DIR):
   packages = [...]    extra packages self setup installs in it
   memory = "NAME"     the memory folder its sessions use
 
+Tools Debian does not package come from mise: self setup installs
+what a mise.toml in DIR lists (see the README).
+
 Environment:
   VM            smolvm machine name; overrides the project file
                 (default: kelder; kelder-test for self smoketest)
@@ -78,8 +81,8 @@ COMMANDS = ("help", "setup", "smoketest", "version")
 
 # What runs in the guest. It gets the primary directory, the state directory,
 # the name of uv's project environment, the number of extra directories, the
-# extra directories, then claude's arguments. GUEST_ENV sets the session up;
-# GUEST_CLAUDE or GUEST_SHELL follows it and starts what the session runs.
+# extra directories, then claude's arguments. GUEST_ENV and mise.GUEST_ENV set
+# the session up; GUEST_CLAUDE or GUEST_SHELL follows them and starts what the session runs.
 GUEST_ENV = """
 dir=$1 state=$2 venv=$3 n=$4; shift 4
 extra=("${@:1:n}"); shift "$n"
@@ -117,11 +120,11 @@ exec claude "${extra[@]/#/--add-dir=}" "$@"
 
 # An interactive bash that reads what a login shell would, for the prompt and
 # completion. It is not started as a login shell because /etc/profile sets
-# PATH afresh, which would drop ~/.local/bin (uv, claude); the rc file given
-# here puts it back afterwards.
+# PATH afresh, which would drop ~/.local/bin (uv, claude) and mise's shims;
+# the rc file given here puts them back afterwards.
 GUEST_SHELL = """
 exec bash --rcfile <(printf '%s\\n' '. /etc/profile' '[[ -f ~/.bashrc ]] && . ~/.bashrc' \\
-  'export PATH="$HOME/.local/bin:$PATH"') -i
+  'export PATH="$HOME/.local/share/mise/shims:$HOME/.local/bin:$PATH"') -i
 """
 
 # Prints each of the packages given that isn't installed in the guest.
@@ -228,12 +231,21 @@ def _terminate(signum: int, _frame: FrameType | None) -> NoReturn:
     sys.exit(128 + signum)
 
 
-def note_missing(cfg: config.Config) -> None:
-    """Say which of the project's packages the machine lacks; setup installs them."""
-    missing = smolvm.guest("bash", "-c", MISSING_PACKAGES, "_", *cfg.packages, capture="out")[1].split()
-    if missing:
-        note(f"machine '{smolvm.VM}' lacks packages listed in {cfg.path}: {' '.join(missing)}; "
-             "run 'kelder self setup' to install them")
+def note_missing(cfg: config.Config, project: str) -> None:
+    """Say which of the project's packages and mise tools the machine lacks; setup installs them."""
+    if cfg.packages:
+        missing = smolvm.guest("bash", "-c", MISSING_PACKAGES, "_", *cfg.packages, capture="out")[1].split()
+        if missing:
+            note(f"machine '{smolvm.VM}' lacks packages listed in {cfg.path}: {' '.join(missing)}; "
+                 "run 'kelder self setup' to install them")
+    if mise.configured(project):
+        tools = mise.missing(project)
+        if tools is None:
+            note(f"machine '{smolvm.VM}' lacks mise, which installs the tools listed in {project}'s "
+                 "mise config; run 'kelder self setup' to install it")
+        elif tools:
+            note(f"machine '{smolvm.VM}' lacks tools listed in {project}'s mise config: "
+                 f"{' '.join(tools)}; run 'kelder self setup' to install them")
 
 
 def run_claude(primary: str, extra: list[str], claude_args: list[str],
@@ -275,13 +287,13 @@ def run_claude(primary: str, extra: list[str], claude_args: list[str],
     # Let Ctrl-C reach Claude; kelder itself keeps going so cleanup still runs.
     signal.signal(signal.SIGINT, lambda *_: None)
     try:
-        if cfg.packages:
-            note_missing(cfg)
+        if cfg.packages or mise.configured(dirs[0]):
+            note_missing(cfg, dirs[0])
         # Only ask for a TTY when there is one, so `kelder -p ... | less` and scripts work.
         flags = ["-i"]
         if sys.stdin.isatty() and sys.stdout.isatty():
             flags.append("-t")
-        script = GUEST_ENV + (GUEST_SHELL if shell else GUEST_CLAUDE)
+        script = GUEST_ENV + mise.GUEST_ENV + (GUEST_SHELL if shell else GUEST_CLAUDE)
         cmd = ["machine", "exec", "--name", smolvm.VM, *flags, "--", "bash", "-c", script, "_",
                dirs[0], smolvm.GUEST_CLAUDE_STATE, f".venv-{smolvm.VM}",
                str(len(dirs) - 1), *dirs[1:], *claude_args]
@@ -319,6 +331,6 @@ def main(argv: list[str] | None = None) -> None:
         from . import provision
         if cfg.path:
             print(f"Using {cfg.path} for machine '{smolvm.VM}'.")
-        provision.run(cfg.packages)
+        provision.run(cfg.packages, check_dir(primary) if mise.configured(primary) else None)
     else:
         sys.exit(run_claude(primary, extra, rest, cfg, shell=command == "shell"))

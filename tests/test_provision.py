@@ -13,7 +13,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from kelder import provision, release, smoketest, smolvm
+from kelder import mise, provision, release, smoketest, smolvm
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -31,7 +31,8 @@ class Provision(unittest.TestCase):
                 SMOLVM_BIN=str(ROOT / "tests/fake_smolvm.py"),
                 CLAUDE_STATE=str(self.tmp / "state"), GUEST_CLAUDE_STATE="/var/lib/kelder"),
             mock.patch.dict(os.environ, {"SMOLVM_TRACE": str(self.trace),
-                                         "FAKE_SMOLVM_NOEXEC": "1", "FAKE_SMOLVM_FRESH": "1"}),
+                                         "FAKE_SMOLVM_NOEXEC": "1", "FAKE_SMOLVM_FRESH": "1",
+                                         "XDG_RUNTIME_DIR": str(self.tmp)}),
             mock.patch.object(provision, "host_checks"),
             mock.patch.object(provision, "host_timezone", return_value="Europe/London"),
         ):
@@ -62,6 +63,9 @@ class Provision(unittest.TestCase):
         apt = next(c for c in commands if c[2:3] == [provision.APT])
         self.assertEqual(apt[:2], ["bash", "-c"])   # the fake guest is root: no sudo
         self.assertEqual(apt[4:], provision.PACKAGES)
+        self.assertIn("mise", provision.PACKAGES)
+        self.assertLess(commands.index(["bash", "-c", mise.ENABLE_REPO]), commands.index(apt))
+        self.assertNotIn(mise.INSTALL, [c[2] for c in commands if len(c) > 2])   # no project given
         self.assertIn(["bash", "-c", provision.UV], commands)
         self.assertIn(["bash", "-c", provision.UPDATE_CLAUDE], commands)
         self.assertIn(["bash", "-c", provision.WRITE_STAMP, "_", provision.STAMP], commands)
@@ -81,6 +85,18 @@ class Provision(unittest.TestCase):
         self.assertIn("Extra packages for this project: ansible-lint ldap-utils", out)
         apt = next(c for c in self.guest_commands() if c[2:3] == [provision.APT])
         self.assertEqual(apt[4:], [*provision.PACKAGES, "ansible-lint", "ldap-utils"])
+
+    def test_setup_installs_the_tools_a_projects_mise_config_lists(self):
+        proj = str(self.tmp / "home/proj")
+        out = self.run_quietly(lambda: provision.run(project=proj))
+        self.assertLess(out.index(f"Installing the tools listed in {proj}'s mise config..."),
+                        out.index("Setup done."))
+        calls = self.calls()
+        install = ["machine", "exec", "--name", "fake", "--", "bash", "-c", mise.INSTALL, "_", proj]
+        attach = calls.index(["machine", "mount", "add", "--name", "fake", "-v", f"{proj}:{proj}"])
+        detach = calls.index(["machine", "mount", "rm", "--name", "fake", "-t", proj])
+        self.assertLess(attach, calls.index(install))
+        self.assertLess(calls.index(install), detach)
 
     def test_setup_reuses_an_existing_machine(self):
         with mock.patch.dict(os.environ, {"IMAGE": "ubuntu"}):
@@ -148,7 +164,7 @@ class UpdateIfStale(unittest.TestCase):
             return 0, "0\n"
         if cmd[2] == provision.READ_STAMP:
             return (0, self.stamp + "\n") if self.stamp else (1, "")
-        step = {provision.APT: "apt", provision.UV: "uv",
+        step = {mise.ENABLE_REPO: "repo", provision.APT: "apt", provision.UV: "uv",
                 provision.UPDATE_CLAUDE: "claude", provision.WRITE_STAMP: "stamp"}[cmd[2]]
         self.ran.append(step)
         if step == "apt":
@@ -175,26 +191,26 @@ class UpdateIfStale(unittest.TestCase):
     def test_stale_machine_is_updated(self):
         self.days_ago(9.5)
         self.assertIn("updating machine 'fake' (last updated 9 days ago)...", self.run_it())
-        self.assertEqual(self.ran, ["apt", "uv", "claude", "stamp"])
+        self.assertEqual(self.ran, ["repo", "apt", "uv", "claude", "stamp"])
         self.assertEqual(self.apt_packages, provision.PACKAGES)   # never a project's extras
 
     def test_machine_with_no_record_is_updated(self):
         self.assertIn("(no record of an update)", self.run_it())
-        self.assertEqual(self.ran, ["apt", "uv", "claude", "stamp"])
+        self.assertEqual(self.ran, ["repo", "apt", "uv", "claude", "stamp"])
 
     def test_failed_update_is_reported_and_does_not_stop_the_session(self):
         self.update_rc = 100
         err = self.run_it()
         self.assertIn("update failed (exit 100); starting the session anyway", err)
         self.assertIn("E: something broke", err)
-        self.assertEqual(self.ran, ["apt"])
+        self.assertEqual(self.ran, ["repo", "apt"])
 
     def test_failed_uv_update_leaves_the_time_unrecorded(self):
         self.uv_rc = 2
         err = self.run_it()
         self.assertIn("update failed (exit 2)", err)
         self.assertIn("uv could not update", err)
-        self.assertEqual(self.ran, ["apt", "uv"])
+        self.assertEqual(self.ran, ["repo", "apt", "uv"])
 
     def test_no_update_and_dry_run_skip_it(self):
         with mock.patch.dict(os.environ, {"NO_UPDATE": "1"}):

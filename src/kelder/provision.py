@@ -7,7 +7,8 @@ config and testvm on an existing machine. The machine has no project
 mounted; kelder attaches one when it runs. Claude's state lives on the
 host in $CLAUDE_STATE, so the machine is disposable. Run from a project
 with a .kelder.toml, it sets up that project's machine and installs the
-packages the file lists.
+packages the file lists; from one with a mise config, it installs the
+tools that lists (see mise.py).
 
   VM=name IMAGE=debian kelder self setup   machine name / base image
 """
@@ -18,7 +19,7 @@ import sys
 import time
 from importlib.resources import files
 
-from . import smolvm
+from . import mise, smolvm
 from .smolvm import die, guest, guest_ok, note
 
 PACKAGES = [
@@ -34,6 +35,9 @@ PACKAGES = [
     "make",
     "shellcheck",
     # uv is installed separately: see UV below
+    # tools a project lists in its mise.toml; from mise's own repository,
+    # which update_guest adds first (see mise.py)
+    "mise",
     # containers
     "crun",
     "podman",
@@ -143,13 +147,15 @@ def asroot() -> list[str]:
 def update_guest(quiet: bool = False, extra: list[str] | None = None) -> tuple[int, str]:
     """Bring the guest up to date and record when.
 
-    Upgrades its packages, installs any missing from PACKAGES and extra, installs or
+    Adds mise's repository if it is missing, upgrades the packages, installs
+    any missing from PACKAGES and extra, installs or
     updates uv, and updates Claude Code if it is installed. Returns (exit status, output) of the first step to fail,
     or (0, "") with the time recorded; the output is only collected when quiet.
     """
     capture = "all" if quiet else None
     root = asroot()
     for cmd in (
+        [*root, "bash", "-c", mise.ENABLE_REPO],
         [*root, "bash", "-c", APT, "_", *PACKAGES, *(extra or [])],
         ["bash", "-c", UV],   # as the session's user, like Claude Code
         ["bash", "-c", UPDATE_CLAUDE],
@@ -218,8 +224,12 @@ def host_timezone() -> str:
     return target.split("zoneinfo/", 1)[1] if "zoneinfo/" in target else ""
 
 
-def run(packages: list[str] | None = None) -> None:
-    """Create and provision the machine; packages are a project's extra ones."""
+def run(packages: list[str] | None = None, project: str | None = None) -> None:
+    """Create and provision the machine.
+
+    packages are a project's extra ones; project is its directory, if it has
+    a mise config to install the tools of.
+    """
     vm = smolvm.VM
     state = smolvm.GUEST_CLAUDE_STATE
     image_set = "IMAGE" in os.environ
@@ -307,5 +317,12 @@ def run(packages: list[str] | None = None) -> None:
         die(f"QEMU could not start a KVM guest (exit {rc}); check nested virtualization")
     if guest("podman", "info", capture="drop")[0] != 0:
         die("podman is installed but not working")
+
+    # --- the project's tools ------------------------------------------------
+    # Last: with no session open, detaching the project stops the machine.
+    if project:
+        print(f"Installing the tools listed in {project}'s mise config...")
+        if not mise.install(project):
+            die(f"could not install the tools listed in {project}'s mise config")
 
     print("Setup done. Run kelder from a project directory, or: kelder self -C DIR")
