@@ -2,6 +2,17 @@
 
 All notable changes to kelder are documented in this file.
 
+## 0.0.4 - 2026-11-17
+
+### Added
+
+- Smoketest smolvm releases via --release
+- Add self shell for a shell in the guest
+
+### Fixed
+
+- Remove mount points on detach
+
 ## 0.0.3 - 2026-11-16
 
 ### Added
