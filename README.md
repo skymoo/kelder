@@ -127,7 +127,8 @@ These environment variables set by the host also change how it behaves:
 
 One machine serves every project. `kelder` starts it if needed and
 attaches each directory to it (`smolvm machine mount add`) at the same path
-it has on the host, and detaches it when the last session using it exits. Only
+it has on the host, and detaches it when the last session using it exits,
+removing the empty directory the mount leaves behind in the guest. Only
 one set of directories is attached at a time: a session for a different set is
 refused while another is open, since mounts are visible machine-wide (give
 the project its own machine in `.kelder.toml`, or use `VM=<name>`). A session

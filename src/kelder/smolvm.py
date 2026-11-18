@@ -132,4 +132,10 @@ def attach(d: str) -> bool:
 
 
 def detach(d: str) -> bool:
-    return run("machine", "mount", "rm", "--name", VM, "-t", d, capture="drop")[0] == 0
+    if run("machine", "mount", "rm", "--name", VM, "-t", d, capture="drop")[0] != 0:
+        return False
+    # smolvm leaves the mount point on the machine's disk, where its name would
+    # tell later sessions about a project they were not given. Remove it and
+    # the parents it leaves empty; rmdir never removes a directory with content.
+    guest("rmdir", "-p", "--ignore-fail-on-non-empty", d, capture="all")
+    return True

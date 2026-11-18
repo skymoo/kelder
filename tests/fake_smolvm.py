@@ -11,7 +11,8 @@ answers just enough to keep kelder going:
   machine mount ...  add/rm/ls kept in $SMOLVM_TRACE.mounts
   machine exec       runs the command locally, without the CLI prefix up to
                      `--`; with FAKE_SMOLVM_NOEXEC=1 it runs nothing, prints 0
-                     for `id -u` and exits 124 for `timeout`
+                     for `id -u` and exits 124 for `timeout`; `rmdir` is
+                     never run, as here it would remove the host's directory
   anything else      exits 0
 """
 import json
@@ -64,6 +65,8 @@ elif command == "mount" and len(args) > 2:
         f.write("".join(m + "\n" for m in lines))
 elif command == "exec":
     cmd = args[args.index("--") + 1:]
+    if cmd[:1] == ["rmdir"]:
+        sys.exit(0)
     if os.environ.get("FAKE_SMOLVM_NOEXEC"):
         if cmd[:2] == ["id", "-u"]:
             print(0)

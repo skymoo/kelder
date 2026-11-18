@@ -124,7 +124,9 @@ class EndToEnd(unittest.TestCase):
         self.run_sc("hello")
         calls = self.calls()
         self.assertIn(f"machine mount add --name fake -v {self.tmp}/proj:{self.tmp}/proj", calls)
-        self.assertIn(f"machine mount rm --name fake -t {self.tmp}/proj", calls)
+        self.assertIn(f"machine mount rm --name fake -t {self.tmp}/proj\n"
+                      f"machine exec --name fake -- rmdir -p --ignore-fail-on-non-empty {self.tmp}/proj",
+                      calls)
         self.assertTrue(calls.rstrip().endswith("machine stop --name fake"), calls)
 
     def test_shell_gets_the_session_without_claude(self):
