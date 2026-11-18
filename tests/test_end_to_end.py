@@ -127,6 +127,28 @@ class EndToEnd(unittest.TestCase):
         self.assertIn(f"machine mount rm --name fake -t {self.tmp}/proj", calls)
         self.assertTrue(calls.rstrip().endswith("machine stop --name fake"), calls)
 
+    def test_shell_gets_the_session_without_claude(self):
+        (self.tmp / "bin/claude").unlink()
+        (self.tmp / "extra/.kelder.toml").write_text('memory = "shared"\n')
+        script = 'echo "cwd=$PWD"; echo "PATH=$PATH"; echo "UV=$UV_PROJECT_ENVIRONMENT"\n' \
+                 'echo "CONFIG=$CLAUDE_CONFIG_DIR"; echo "KEY=${ANTHROPIC_API_KEY-unset}"\n' \
+                 'env | grep "^GIT_CONFIG_VALUE_0="\n'
+        p = subprocess.run(self.command("self", "shell", "-C", str(self.tmp / "extra")),
+                           cwd=self.tmp / "proj", env=self.env, check=False, input=script,
+                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        self.assertEqual(p.returncode, 0, p.stdout)
+        self.assertIn(f"cwd={self.tmp}/extra", p.stdout)
+        self.assertIn(f"PATH={self.tmp}/home/.local/bin:", p.stdout)
+        self.assertIn("UV=.venv-fake", p.stdout)
+        self.assertIn(f"CONFIG={self.tmp}/state", p.stdout)
+        self.assertIn("KEY=unset", p.stdout)
+        self.assertIn(f"GIT_CONFIG_VALUE_0={self.tmp}/extra", p.stdout)
+        self.assertNotIn("resume with:", p.stdout)
+        calls = self.calls()
+        self.assertNotIn("autoMemoryDirectory", calls)
+        self.assertIn(f"machine mount add --name fake -v {self.tmp}/extra:{self.tmp}/extra", calls)
+        self.assertTrue(calls.rstrip().endswith("machine stop --name fake"), calls)
+
     def test_exit_status_is_claudes(self):
         (self.tmp / "bin/claude").write_text("#!/bin/sh\nexit 7\n")
         self.assertEqual(self.run_sc("hello")[0], 7)

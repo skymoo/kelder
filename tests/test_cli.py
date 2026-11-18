@@ -48,6 +48,14 @@ class ParseArgs(unittest.TestCase):
         self.assertEqual(cli.parse_args(["self", "smoketest", "--release", "1.2.3"]),
                          ("smoketest", ".", [], ["--release", "1.2.3"]))
 
+    def test_shell_takes_the_directory_options(self):
+        self.assertEqual(cli.parse_args(["self", "shell"]), ("shell", ".", [], []))
+        self.assertEqual(cli.parse_args(["self", "shell", "-a", "e", "-C", "d"]),
+                         ("shell", "d", ["e"], []))
+        self.assertIn("'self shell' takes only -C and -a, not '-p'",
+                      dies(self, cli.parse_args, ["self", "shell", "-p", "hi"]))
+        self.assertIn("-C needs a directory", dies(self, cli.parse_args, ["self", "shell", "-C"]))
+
     def test_errors(self):
         self.assertIn("unknown command or option 'self bogus'", dies(self, cli.parse_args, ["self", "bogus"]))
         self.assertIn("unknown command or option 'self '", dies(self, cli.parse_args, ["self"]))

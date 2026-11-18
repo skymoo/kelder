@@ -38,11 +38,13 @@ cd ~/git/app && kelder                  # attach ~/git/app and start Claude ther
 kelder self -C ~/git/other              # or name the directory
 cd ~/git/app && kelder self -a ../lib   # also give Claude ~/git/lib
 kelder -p "run the tests" | less        # non-interactive works too
+kelder self shell                       # a shell in the guest instead of Claude
 ```
 
 ```text
 kelder [--] [CLAUDE_ARGS...]
 kelder self [-C DIR] [-a DIR]... [--] [CLAUDE_ARGS...]
+kelder self shell [-C DIR] [-a DIR]...
 kelder self help
 kelder self setup
 kelder self version
@@ -60,6 +62,12 @@ own:
 - `-C` and `-a` can be given in any order and combined; they end at
   `--` or at the first argument that isn't one of them, and the rest
   goes to `claude`.
+- `self shell`: open a shell in the guest instead of starting Claude. It
+  is a session like any other: `-C` and `-a` attach the same directories,
+  the shell starts in the primary one with the environment Claude gets
+  (`~/.local/bin` on `PATH`, the git and uv settings), and the machine
+  stays up until the last session exits. A project's `memory` key has no
+  effect on it, as that is an argument to `claude`.
 - `self help`: show `kelder`'s own usage.
 - `self version`: show `kelder`'s version.
 - `self setup`: create and provision the machine; safe to re-run, it

@@ -31,6 +31,7 @@ from .smolvm import die, note
 USAGE = """\
 Usage: kelder [--] [CLAUDE_ARGS...]
        kelder self [-C DIR] [-a DIR]... [--] [CLAUDE_ARGS...]
+       kelder self shell [-C DIR] [-a DIR]...
        kelder self COMMAND
        kelder self smoketest [--release VERSION]
 
@@ -46,6 +47,8 @@ Options (after self):
 Commands (after self):
   help       show this help
   setup      create and provision the machine (safe to re-run)
+  shell      open a shell in the guest instead of starting Claude,
+             with the same directories and environment
   smoketest  test the installed smolvm in a throwaway machine; with
              --release VERSION, test that smolvm release instead,
              without installing it
@@ -75,10 +78,9 @@ COMMANDS = ("help", "setup", "smoketest", "version")
 
 # What runs in the guest. It gets the primary directory, the state directory,
 # the name of uv's project environment, the number of extra directories, the
-# extra directories, then claude's arguments. Extra directories are passed as
-# --add-dir=DIR: claude's --add-dir takes several values, and the separate
-# form would swallow a following prompt.
-GUEST_SCRIPT = """
+# extra directories, then claude's arguments. GUEST_ENV sets the session up;
+# GUEST_CLAUDE or GUEST_SHELL follows it and starts what the session runs.
+GUEST_ENV = """
 dir=$1 state=$2 venv=$3 n=$4; shift 4
 extra=("${@:1:n}"); shift "$n"
 for d in "$dir" "${extra[@]}"; do
@@ -116,8 +118,22 @@ export UV_PROJECT_ENVIRONMENT=$venv
 # uv's cache is on the guest's disk and the environment is in the attached
 # directory, so it can never hard-link between them; copy without warning.
 export UV_LINK_MODE=copy
+"""
+
+# Extra directories are passed as --add-dir=DIR: claude's --add-dir takes
+# several values, and the separate form would swallow a following prompt.
+GUEST_CLAUDE = """
 command -v claude >/dev/null || { echo "kelder: claude is not installed in the guest; run kelder self setup" >&2; exit 127; }
 exec claude "${extra[@]/#/--add-dir=}" "$@"
+"""
+
+# An interactive bash that reads what a login shell would, for the prompt and
+# completion. It is not started as a login shell because /etc/profile sets
+# PATH afresh, which would drop ~/.local/bin (uv, claude); the rc file given
+# here puts it back afterwards.
+GUEST_SHELL = """
+exec bash --rcfile <(printf '%s\\n' '. /etc/profile' '[[ -f ~/.bashrc ]] && . ~/.bashrc' \\
+  'export PATH="$HOME/.local/bin:$PATH"') -i
 """
 
 # Prints each of the packages given that isn't installed in the guest.
@@ -131,8 +147,8 @@ done
 def parse_args(args: list[str]) -> tuple[str, str, list[str], list[str]]:
     """Split the command line into (command, primary dir, extra dirs, claude's args).
 
-    command is "run" or one of COMMANDS; for a command the last item is the
-    command's own arguments.
+    command is "run", "shell" or one of COMMANDS; for one of COMMANDS the last
+    item is the command's own arguments.
     """
     # Parsed by hand, not with argparse: most of the command line is claude's,
     # and argparse takes every dash argument as its own. It rejects
@@ -144,9 +160,9 @@ def parse_args(args: list[str]) -> tuple[str, str, list[str], list[str]]:
         sub = args[1] if len(args) > 1 else ""
         if sub in COMMANDS:
             return sub, primary, extra, args[2:]
-        if sub not in ("-C", "-a"):
+        if sub not in ("-C", "-a", "shell"):
             die(f"unknown command or option 'self {sub}'; see 'kelder self help'")
-        args = args[1:]
+        args = args[2:] if sub == "shell" else args[1:]
         while args:
             if args[0] == "-C":
                 if len(args) < 2:
@@ -162,6 +178,10 @@ def parse_args(args: list[str]) -> tuple[str, str, list[str], list[str]]:
                 break
             else:
                 break
+        if sub == "shell":
+            if args:
+                die(f"'self shell' takes only -C and -a, not '{args[0]}'")
+            return "shell", primary, extra, []
     elif args[:1] == ["--"]:
         args = args[1:]
     return "run", primary, extra, args
@@ -229,13 +249,14 @@ def note_missing(cfg: config.Config) -> None:
 
 
 def run_claude(primary: str, extra: list[str], claude_args: list[str],
-               cfg: config.Config | None = None) -> int:
+               cfg: config.Config | None = None, shell: bool = False) -> int:
     """Attach the directories, run claude in the guest, clean up; returns its exit status.
 
-    cfg is the primary directory's project file, if it has one.
+    cfg is the primary directory's project file, if it has one. With shell,
+    a shell is run in claude's place.
     """
     cfg = cfg or config.Config()
-    if cfg.memory:
+    if cfg.memory and not shell:
         # Claude takes only the last --settings it is given, so one of the
         # user's would silently replace this one, or this one theirs.
         for arg in claude_args:
@@ -272,14 +293,15 @@ def run_claude(primary: str, extra: list[str], claude_args: list[str],
         flags = ["-i"]
         if sys.stdin.isatty() and sys.stdout.isatty():
             flags.append("-t")
-        cmd = ["machine", "exec", "--name", smolvm.VM, *flags, "--", "bash", "-c", GUEST_SCRIPT, "_",
+        script = GUEST_ENV + (GUEST_SHELL if shell else GUEST_CLAUDE)
+        cmd = ["machine", "exec", "--name", smolvm.VM, *flags, "--", "bash", "-c", script, "_",
                dirs[0], smolvm.GUEST_CLAUDE_STATE, f".venv-{smolvm.VM}",
                str(len(dirs) - 1), *dirs[1:], *claude_args]
         if smolvm.DRY_RUN:
             return smolvm.run(*cmd)[0]
         started = time.time() - 2   # allow for coarse file timestamps
         rc = subprocess.call([smolvm.SMOLVM_BIN, *cmd])
-        if "-t" in flags:
+        if "-t" in flags and not shell:
             resume = resume_command(dirs, started, cfg.vm or "kelder")
             if resume:
                 note(f"resume with: {resume}")
@@ -311,4 +333,4 @@ def main(argv: list[str] | None = None) -> None:
             print(f"Using {cfg.path} for machine '{smolvm.VM}'.")
         provision.run(cfg.packages)
     else:
-        sys.exit(run_claude(primary, extra, rest, cfg))
+        sys.exit(run_claude(primary, extra, rest, cfg, shell=command == "shell"))
