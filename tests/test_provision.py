@@ -92,7 +92,9 @@ class Provision(unittest.TestCase):
         self.assertLess(out.index(f"Installing the tools listed in {proj}'s mise config..."),
                         out.index("Setup done."))
         calls = self.calls()
-        install = ["machine", "exec", "--name", "fake", "--", "bash", "-c", mise.INSTALL, "_", proj]
+        # --stream: its output is shown as it arrives, not when it ends
+        install = ["machine", "exec", "--name", "fake", "--stream", "--",
+                   "bash", "-c", mise.INSTALL, "_", proj]
         attach = calls.index(["machine", "mount", "add", "--name", "fake", "-v", f"{proj}:{proj}"])
         detach = calls.index(["machine", "mount", "rm", "--name", "fake", "-t", proj])
         self.assertLess(attach, calls.index(install))

@@ -75,7 +75,11 @@ def run(*args: str, capture: Capture = None) -> tuple[int, str]:
 
 def guest(*cmd: str, capture: Capture = None) -> tuple[int, str]:
     """Run a command in the guest without a TTY; returns (exit status, output)."""
-    return run("machine", "exec", "--name", VM, "--", *cmd, capture=capture)
+    # Without --stream, smolvm prints a command's output only once it has
+    # finished (src/cli/machine.rs at v1.35.3), so a long step looks hung.
+    # Output that is collected here anyway is left as it was.
+    stream = ["--stream"] if capture is None else []
+    return run("machine", "exec", "--name", VM, *stream, "--", *cmd, capture=capture)
 
 
 def guest_ok(*cmd: str) -> bool:
