@@ -1,31 +1,45 @@
 # git-cliff configuration: https://git-cliff.org/docs/configuration
 # CHANGELOG.md is generated from the commit subjects at release time.
+# The header below must match the top of CHANGELOG.md exactly, which is
+# how `git cliff --prepend` finds where to insert a new release.
 
 [changelog]
+# git-cliff trims each template line and drops the template's final
+# newline (trim = true), and always adds one newline after the header: the
+# escaped \n at the end of header and body is what leaves exactly one
+# blank line between the header and a release, and between releases.
 header = """
-# Changelog\n
-All notable changes to kelder are documented in this file.
-"""
-body = """
+# Changelog
 
+All notable changes to kelder are documented in this file.\n
+"""
+# The date is now(), the local date on the machine cutting the release:
+# the date filter renders the release timestamp in UTC, which dates an
+# evening release the next day.
+body = """
 {% if version -%}
-    ## {{ version | trim_start_matches(pat="v") }} - {{ now() | date(format="%Y-%m-%d") }}
+## {{ version | trim_start_matches(pat="v") }} - {{ now() | date(format="%Y-%m-%d") }}
 {% else -%}
-    ## Unreleased
+## Unreleased
+{% endif -%}
+{% if commits | length == 0 %}
+No user-visible changes.
 {% endif -%}
 {% for group, commits in commits | group_by(attribute="group") %}
-    ### {{ group | upper_first }}
-    {% for commit in commits %}
-        - {{ commit.message | split(pat="\n") | first | upper_first | trim }}\
-    {% endfor %}
-{% endfor %}
+### {{ group }}
+{% for commit in commits | unique(attribute="message") %}
+- {{ commit.message | upper_first }}
+{%- endfor %}
+{% endfor %}\n
 """
 trim = true
 
 [git]
 conventional_commits = true
-# The three commits that predate conventional subjects are left out.
+# Commits without a conventional subject are left out.
 filter_unconventional = true
+tag_pattern = "v[0-9].*"
+sort_commits = "oldest"
 # Only what someone running kelder would notice; docs, chore, ci and
 # test commits are skipped.
 commit_parsers = [
@@ -34,5 +48,3 @@ commit_parsers = [
     { message = "^(refactor|perf)", group = "Changed" },
     { message = ".*", skip = true },
 ]
-topo_order = false
-sort_commits = "oldest"
