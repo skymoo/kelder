@@ -2,6 +2,17 @@
 
 All notable changes to kelder are documented in this file.
 
+## 0.0.5 - 2026-11-18
+
+### Added
+
+- Install a project's mise.toml tools
+
+### Fixed
+
+- Let libgit2 tools open attached repos
+- Stream setup and smoketest output live
+
 ## 0.0.4 - 2026-11-17
 
 ### Added
