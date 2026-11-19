@@ -34,7 +34,7 @@ Usage: kelder [--] [CLAUDE_ARGS...]
        kelder self COMMAND
        kelder self smoketest [--release VERSION]
 
-Run Claude Code in the smolvm guest with DIR (default: the current
+Run Claude Code in the guest with DIR (default: the current
 directory) attached at the same path it has on the host. Only arguments
 after `self` are kelder's own.
 
@@ -50,14 +50,14 @@ Commands (after self):
              with the same directories and environment
   smoketest  test the installed smolvm in a throwaway machine; with
              --release VERSION, test that smolvm release instead,
-             without installing it
+             without installing it; with BACKEND=qemu, test QEMU
   version    show kelder's version
 
 Every other argument is passed to claude unchanged; run
 `kelder --help` for Claude Code's options.
 
 Project file (.kelder.toml in DIR):
-  vm = "NAME"         the smolvm machine this project runs in
+  vm = "NAME"         the machine this project runs in
   packages = [...]    extra packages self setup installs in it
   memory = "NAME"     the memory folder its sessions use
 
@@ -69,15 +69,18 @@ Tools Debian does not package come from mise: self setup installs
 what a mise.toml in DIR lists (see the README).
 
 Environment:
-  VM            smolvm machine name; overrides the project file
+  VM            machine name; overrides the project file
                 (default: kelder; kelder-test for self smoketest)
+  BACKEND       qemu makes self setup create a QEMU/KVM machine in
+                place of a smolvm one (see the README)
   CLAUDE_STATE  Claude's state directory on the host
                 (default: ~/.local/share/kelder/claude)
-  IMAGE         base image for a new machine (self setup;
+  IMAGE         base image for a new smolvm machine (self setup;
                 default: debian)
   NO_UPDATE     1 skips the weekly package update when a session
                 boots the machine
-  DRY_RUN       1 prints every smolvm call instead of running it
+  DRY_RUN       1 prints the machine's commands instead of running
+                them
 """
 
 COMMANDS = ("help", "setup", "smoketest", "version")
