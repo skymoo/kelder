@@ -1,7 +1,7 @@
 [project]
 name = "kelder"
 version = "0.0.5"
-description = "Run Claude Code in a smolvm guest with host directories attached"
+description = "Run Claude Code in a QEMU/KVM guest with host directories attached"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "GPL-3.0-or-later"

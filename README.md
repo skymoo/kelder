@@ -1,14 +1,15 @@
-# kelder: Claude Code in a smolvm guest
+# kelder: Claude Code in a QEMU/KVM guest
 
-Claude Code runs inside a minimal smolvm VM (Debian, nested KVM). It can start
-its own VMs (`testvm`) and containers (`podman`) there to run tests. The
-machine can also be a QEMU/KVM one: see [QEMU machines](#qemu-machines).
+Claude Code runs inside a minimal virtual machine (Debian 13 under QEMU,
+with nested KVM), as a user with your uid. It can start its own VMs
+(`testvm`) and containers (`podman`) there to run tests.
 
 ## Install
 
-Needs, on the host: smolvm 1.32 or newer, KVM with nested virtualization,
-Python 3.11 or newer and bash. kelder itself has no Python dependencies.
-A QEMU machine needs QEMU, virtiofsd and ssh in place of smolvm.
+Needs, on an x86_64 Linux host: `qemu-system-x86_64`, `qemu-img`,
+`virtiofsd`, `ssh`, `ssh-keygen`, one of `genisoimage`, `xorrisofs` or
+`mkisofs`, access to `/dev/kvm` with nested virtualization, and Python 3.11
+or newer. kelder itself has no Python dependencies.
 
 ```sh
 uv tool install kelder            # puts kelder on PATH
@@ -24,17 +25,14 @@ src/kelder/cli.py          the kelder command: arguments, running claude in the 
 src/kelder/session.py      which directories are attached, and by which sessions
 src/kelder/config.py       a project's .kelder.toml, and the user's config.toml
 src/kelder/settings.py     settings shared by every module
-src/kelder/machine.py      the machine, whichever backend runs it
-src/kelder/smolvm.py       the smolvm backend: every smolvm CLI assumption
-src/kelder/qemu.py         the QEMU backend: QEMU, virtiofsd and ssh
+src/kelder/machine.py      the machine, as the rest of kelder sees it
+src/kelder/qemu.py         the machine itself: QEMU, virtiofsd and ssh
 src/kelder/provision.py    create and provision the guest (kelder self setup)
-src/kelder/smoketest.py    test a smolvm upgrade (kelder self smoketest)
-src/kelder/release.py      fetch a smolvm release to test before upgrading
+src/kelder/smoketest.py    test the host's QEMU (kelder self smoketest)
 src/kelder/mise.py         tools a project lists in its mise.toml
 src/kelder/guest/          files setup copies into the guest:
   testvm                     throwaway QEMU/KVM VMs (/usr/local/bin)
-  smoketest                  checks the machine's behaviour after an upgrade (/usr/local/bin)
-  containers-tsi.conf        podman DNS workaround on smolvm machines (see below)
+  smoketest                  checks the machine's behaviour (/usr/local/bin)
 ```
 
 ## Usage
@@ -53,6 +51,7 @@ kelder self [-C DIR] [-a DIR]... [--] [CLAUDE_ARGS...]
 kelder self shell [-C DIR] [-a DIR]...
 kelder self help
 kelder self setup
+kelder self smoketest
 kelder self version
 ```
 
@@ -78,10 +77,8 @@ own:
 - `self version`: show `kelder`'s version.
 - `self setup`: create and provision the machine; safe to re-run, it
   updates packages, config and `testvm` on an existing machine.
-- `self smoketest`: test the installed smolvm in a throwaway machine; with
-  `--release VERSION`, test that smolvm release without installing it (see
-  [Testing a smolvm upgrade](#testing-a-smolvm-upgrade)). With
-  `BACKEND=qemu` the throwaway machine is a QEMU one.
+- `self smoketest`: test the host's QEMU, virtiofsd and ssh in a
+  throwaway machine (see [Testing the host's QEMU](#testing-the-hosts-qemu)).
 
 Without `self`, every argument goes to `claude`. To give `claude` a
 prompt starting with "self", use `kelder -- self ...`.
@@ -101,7 +98,7 @@ packages = [
 memory = "homelab"
 ```
 
-- `vm`: the smolvm machine this project runs in, instead of `kelder`.
+- `vm`: the machine this project runs in, instead of `kelder`.
   Projects with different machines can have sessions open at the same
   time. Each machine is set up once, with `kelder self setup` run from
   the project.
@@ -141,19 +138,16 @@ These environment variables set by the host also change how it behaves:
 
 - `VM=<name>`: the machine to use (default `kelder`), overriding
   the project's `.kelder.toml`; also read by `kelder self setup`.
-- `BACKEND=qemu`: make the machine `kelder self setup` creates a QEMU one
-  (see [QEMU machines](#qemu-machines)). Not needed afterwards.
 - `CLAUDE_STATE=<dir>`: where Claude's state lives on the host (default
   `~/.local/share/kelder/claude`).
-- `IMAGE=<image>`: base image for `kelder self setup` (default `debian`).
-  smolvm machines only.
 - `NO_UPDATE=1`: skip the weekly package update (below) for this run.
 - `DRY_RUN=1`: print the commands that would start, change and enter the
   machine instead of running them.
 
 One machine serves every project. `kelder` starts it if needed and
-attaches each directory to it (`smolvm machine mount add`) at the same path
-it has on the host, and detaches it when the last session using it exits,
+attaches each directory to it (a virtiofs device plugged into the running
+machine) at the same path it has on the host, and detaches it when the
+last session using it exits,
 removing the empty directory the mount leaves behind in the guest. Only
 one set of directories is attached at a time: a session for a different set is
 refused while another is open, since mounts are visible machine-wide (give
@@ -175,7 +169,7 @@ Claude's state (login, settings, history, memory) is kept on the host in
 `~/.local/share/kelder/claude` (override with `CLAUDE_STATE`), mounted at
 `/var/lib/kelder` in the machine, with `CLAUDE_CONFIG_DIR` pointing there.
 The machine itself is disposable: delete it and run `kelder self setup` to
-rebuild, and nothing is lost. Changing `IMAGE` works the same way.
+rebuild, and nothing is lost.
 
 Git in the machine does not see your global gitignore. Put the patterns
 you want ignored there in a `gitignore` file in the state directory
@@ -243,34 +237,16 @@ rust = "1.91"
 - Debian packages a tool needs (a C compiler for Rust, say) go in
   `packages` in `.kelder.toml`.
 
-## QEMU machines
+## The machine
 
-A machine can be run by QEMU in place of smolvm, using what the host's
-distribution packages: QEMU with KVM, virtiofsd for the attached
-directories and ssh for the sessions. It is a Debian 13 cloud image.
-
-On the host it needs `qemu-system-x86_64`, `qemu-img`, `virtiofsd`, `ssh`,
-`ssh-keygen` and one of `genisoimage`, `xorrisofs` or `mkisofs`, and your
-user needs access to `/dev/kvm`. Only x86_64 hosts are supported.
-
-```sh
-BACKEND=qemu VM=kelder-qemu kelder self setup   # create and provision it
-VM=kelder-qemu kelder                           # use it
-```
-
-`BACKEND=qemu` is only needed for setup. Afterwards a machine that setup
-made this way is a QEMU machine, and every other name is a smolvm one;
-`BACKEND=smolvm` or `BACKEND=qemu` overrides that. Put `vm =
-"kelder-qemu"` in a project's `.kelder.toml` to use it without `VM=`.
-
-Everything above applies to it, with these differences:
+The machine is a Debian 13 cloud image run by QEMU with KVM as your own
+user, using what the host's distribution packages: virtiofsd shares the
+attached directories and sessions go over ssh to a port on localhost.
 
 - Sessions run as the guest user `kelder`, not root. It has your uid and
   gid, so files in attached directories belong to the same user on both
   sides, and it may `sudo` without a password. `podman` is rootless
-  unless run with `sudo`.
-- It has an ordinary network card, so the container UDP problem and its
-  DNS workaround (below) do not apply.
+  unless run with `sudo`. Run as root, kelder uses root in the guest too.
 - It gets half the host's memory, up to 8 GiB, up to 4 CPUs and a 20 GB
   disk. Memory the guest has used is not returned to the host until the
   machine stops.
@@ -279,7 +255,6 @@ Everything above applies to it, with these differences:
   attaches. One that finds it running with too few, as after `kelder self
   setup`, restarts it first (`kelder: restarting machine ...`); that only
   happens when no other session is in it.
-- `IMAGE` is ignored, and `kelder self smoketest --release` is refused.
 
 The machine's disk, ssh key and cloud-init seed are in
 `~/.local/share/kelder/machines/<name>`, and the image it was copied from
@@ -288,40 +263,19 @@ for each attached directory's virtiofsd are in
 `$XDG_RUNTIME_DIR/kelder/<name>/qemu`. To delete the machine, exit its
 sessions so it stops, then remove its directory under `machines`.
 
-`BACKEND=qemu kelder self smoketest` tests the host's QEMU the way [the
-next section](#testing-a-smolvm-upgrade) tests smolvm: a throwaway
-`kelder-test` machine, the guest's `smoketest`, and the machine deleted
-if everything passed.
+## Testing the host's QEMU
 
-## Testing a smolvm upgrade
+After the host's QEMU or virtiofsd has been upgraded, run `kelder self
+smoketest` from a project directory. It creates a throwaway `kelder-test`
+machine (`VM=<name>` picks another name), provisions it as `kelder self
+setup` would, runs the guest's `smoketest` in it with the current directory
+attached, and deletes the machine if everything passed. The guest script
+checks the session user, `sudo`, the ownership of files it creates in the
+attached directory, UDP and DNS in a container, and that `testvm` boots a
+nested VM; each line is PASS or FAIL.
 
-Exit every kelder session so `kelder` is stopped, upgrade smolvm, then run
-`kelder self smoketest` from a project directory. It creates a throwaway
-`kelder-test` machine (`VM=<name>` picks another name), runs the guest's
-`smoketest` in it with the current directory attached, checks the smolvm
-behaviour relied on (see below) from the host, and deletes the machine if
-everything passed. FAIL means the upgrade broke something kelder needs;
-KNOWN is a smolvm bug the guest config works around; CHANGED means that bug
-is gone and its workaround may be removable.
-
-A machine that fails is kept for inspection. If `kelder` itself stops starting
-after an upgrade, keep it too and create the replacement under another name.
-
-To try a release before upgrading, run `kelder self smoketest --release
-1.35.3` instead. It downloads that release's Linux tarball from GitHub into a
-directory under `/var/tmp`, checks it against the release's
-`checksums.sha256`, and runs the same test with it. The machine lives in
-that directory too, so the installed smolvm and its machines are left
-alone, and the directory is removed if everything passed.
-
-This also works from a session inside the guest (`uv run kelder self
-smoketest --release 1.35.3` in a checkout of this repository), which has
-nested KVM but no smolvm. There the release's "host" is the guest: the test
-machine runs under nested virtualization on the guest's kernel, and its
-network goes through both the release's and the installed smolvm's socket
-proxy. A pass there is good evidence, not proof, and it cannot show whether
-the existing `kelder` machine boots under the new release, so run the
-plain `kelder self smoketest` after the upgrade as well.
+A machine that fails is kept for inspection, and the command that removes
+it is printed.
 
 ## Development
 
@@ -331,15 +285,15 @@ uv run ruff check     # lint
 uv run ty check       # type check
 ```
 
-The tests need neither smolvm nor a network. The unit tests cover argument
-parsing and the attachment bookkeeping. The rest run `kelder` against
-`tests/fake_smolvm.py`, a stand-in selected with `SMOLVM_BIN` that records
-each call and runs `exec` commands locally with a fake `claude`; they check
-the `smolvm` calls made and the environment `claude` would get.
-`tests/fake_qemu.py` does the same for a QEMU machine, standing in for
-QEMU, virtiofsd and ssh. They are
-plain `unittest` tests, so `PYTHONPATH=src python3 -m unittest discover -s
-tests` runs them without uv.
+The tests need neither QEMU nor a network. The unit tests cover argument
+parsing, the attachment bookkeeping and the commands kelder builds for
+QEMU. The rest run `kelder` against `tests/fake_qemu.py`, which stands in
+for QEMU, virtiofsd and ssh when linked into a directory at the front of
+`PATH`: it records each call and runs the guest's commands locally with a
+fake `claude`. They check what is started and plugged in, and the
+environment `claude` would get. They are plain `unittest` tests, so
+`PYTHONPATH=src python3 -m unittest discover -s tests` runs them without
+uv.
 
 ## Releasing
 
@@ -367,26 +321,11 @@ git push origin main vX.Y.Z
 
 ## Quirks found while setting this up
 
-**Nested VMs must boot with UEFI.** Under smolvm's nested KVM (AMD host), a
-cloud image booted through BIOS GRUB resets the moment GRUB jumps into the
-kernel. The same kernel boots fine when QEMU loads it directly, and the image
-boots fine with OVMF. `testvm` always uses OVMF, so `ovmf` is a required package.
-
-**UDP inside containers (smolvm machines).** The guest has no real NIC: libkrun's TSI
-(`tsi_hijack`) proxies every socket to the host. Inside a container network
-namespace, a *connected* UDP socket can send only one datagram; later sends
-fail with `EINVAL`. Unconnected `sendto` works, and the guest's own namespace
-is unaffected. glibc sends DNS A and AAAA queries on one connected socket, so
-container DNS broke (apt: "Temporary failure resolving"). The
-`single-request-reopen` resolver option fixes DNS. Other UDP-heavy workloads in
-containers (QUIC, statsd, syslog) may need `--network host`. This is a libkrun
-bug, still present in smolvm 1.35.0, worth reporting upstream.
-
-**smolvm behaviour relied on** (checked against the v1.34.4 source): `machine
-status` exits 0 for a running or stopped machine and fails for an unknown one
-(an unreadable state database is also reported as not found); `machine start`
-on a running machine prints "already running" and succeeds, and fails for a
-paused one; `machine exec` takes `-i` and `-t` as separate flags.
+**Nested VMs boot with UEFI.** `testvm` always boots with OVMF, so `ovmf`
+is a required package in the guest. It was chosen when a cloud image
+booted through BIOS GRUB reset the moment GRUB jumped into the kernel
+under nested KVM (AMD host), in the smolvm guest kelder used before;
+whether BIOS would work in today's machine has not been tried.
 
 ## License
 
