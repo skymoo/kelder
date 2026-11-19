@@ -62,6 +62,10 @@ Project file (.kelder.toml in DIR):
   packages = [...]    extra packages self setup installs in it
   memory = "NAME"     the memory folder its sessions use
 
+User file (~/.config/kelder/config.toml), for projects without a
+project file; a project file replaces its entry entirely:
+  [projects."DIR"]    the same keys, for DIR and directories below it
+
 Tools Debian does not package come from mise: self setup installs
 what a mise.toml in DIR lists (see the README).
 

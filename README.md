@@ -20,7 +20,7 @@ installing.
 ```text
 src/kelder/cli.py          the kelder command: arguments, running claude in the guest
 src/kelder/session.py      which directories are attached, and by which sessions
-src/kelder/config.py       a project's .kelder.toml
+src/kelder/config.py       a project's .kelder.toml, and the user's config.toml
 src/kelder/smolvm.py       settings and every smolvm CLI assumption
 src/kelder/provision.py    create and provision the guest (kelder self setup)
 src/kelder/smoketest.py    test a smolvm upgrade (kelder self smoketest)
@@ -115,6 +115,21 @@ memory = "homelab"
 
 Every key is optional. Only the directory Claude starts in is checked: a
 file in a directory above it, or in one added with `-a`, is ignored.
+
+A project that cannot carry a `.kelder.toml` (a repository shared with
+people who do not use kelder, say) can get the same keys from your own
+file, `~/.config/kelder/config.toml` (under `$XDG_CONFIG_HOME` if set):
+
+```toml
+[projects."~/git/work"]
+vm = "work"
+memory = "work"
+```
+
+An entry covers its directory and every directory below it; when several
+match, the longest path is used. The directory is an absolute path or
+starts with `~`. A project's own `.kelder.toml` replaces the entry
+outright, even an empty one: keys are never combined from both files.
 
 These environment variables set by the host also change how it behaves:
 
