@@ -3,16 +3,26 @@
 """The machine sessions run in.
 
 The rest of kelder reaches the machine through these functions; what they
-do is up to the backend the machine is on. smolvm is the only one.
+do is up to the backend the machine is on: smolvm, or QEMU for a machine
+made with BACKEND=qemu (see qemu.py).
 """
 from types import ModuleType
 
-from . import smolvm
-from .settings import Capture
+from . import qemu, settings, smolvm
+from .settings import Capture, die
 
 
 def backend() -> ModuleType:
-    """The module that runs the machine."""
+    """The module that runs the machine.
+
+    BACKEND names it. Without that, a machine made by the QEMU backend is a
+    QEMU machine and every other name is smolvm's.
+    """
+    name = settings.env("BACKEND", "")
+    if name not in ("", "qemu", "smolvm"):
+        die(f"unknown BACKEND '{name}'; it is qemu or smolvm")
+    if name == "qemu" or (not name and qemu.exists()):
+        return qemu
     return smolvm
 
 
@@ -37,9 +47,12 @@ def ensure(state: str, guest_state: str) -> None:
     backend().ensure(state, guest_state)
 
 
-def start() -> bool:
-    """Start the machine if needed; True if this call booted it."""
-    return backend().start()
+def start(directories: int = 0) -> bool:
+    """Start the machine if needed; True if this call booted it.
+
+    directories is how many the caller is about to attach.
+    """
+    return backend().start(directories)
 
 
 def stop() -> bool:
@@ -58,6 +71,13 @@ def delete_command() -> str:
 
 def attached(d: str) -> bool:
     return backend().attached(d)
+
+
+def make_room(directories: int) -> bool:
+    """Make sure that many more directories can be attached, restarting the
+    machine if the backend has to. Only for when no session has a
+    directory attached."""
+    return backend().make_room(directories)
 
 
 def attach(d: str) -> bool:

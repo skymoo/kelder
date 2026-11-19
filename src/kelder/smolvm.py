@@ -109,10 +109,11 @@ def running() -> bool:
     return "': running" in run("machine", "status", "--name", settings.VM, capture="all")[1]
 
 
-def start() -> bool:
+def start(directories: int = 0) -> bool:
     """Start the machine if needed, then wait until it accepts exec.
 
     Returns True if this call booted it, False if it was already running.
+    How many directories will be attached makes no difference to smolvm.
     """
     booted = not running()
     if booted:
@@ -181,6 +182,11 @@ def smoketest_host() -> int:
 def attached(d: str) -> bool:
     rc, out = run("machine", "mount", "ls", "--name", settings.VM, capture="out")
     return rc == 0 and f"{d} -> {d}" in out.splitlines()
+
+
+def make_room(directories: int) -> bool:
+    """smolvm attaches any number of directories to a running machine."""
+    return True
 
 
 def attach(d: str) -> bool:

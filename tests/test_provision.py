@@ -79,6 +79,10 @@ class Provision(unittest.TestCase):
         })
         self.assertIn(["bash", "-c", provision.SET_TIMEZONE, "_", "Europe/London"], commands)
         self.assertIn(["git", "config", "--global", "--replace-all", "safe.directory", "*"], commands)
+        # podman's packages are in before the user's bus is started, and that before podman runs.
+        bus = commands.index(["bash", "-c", provision.START_USER_BUS])
+        self.assertLess(commands.index(apt), bus)
+        self.assertLess(bus, commands.index(["podman", "info"]))
 
     def test_setup_installs_a_projects_extra_packages(self):
         out = self.run_quietly(lambda: provision.run(["ansible-lint", "ldap-utils"]))

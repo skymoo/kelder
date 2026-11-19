@@ -24,6 +24,7 @@ src/kelder/config.py       a project's .kelder.toml, and the user's config.toml
 src/kelder/settings.py     settings shared by every module
 src/kelder/machine.py      the machine, whichever backend runs it
 src/kelder/smolvm.py       the smolvm backend: every smolvm CLI assumption
+src/kelder/qemu.py         the QEMU backend: QEMU, virtiofsd and ssh
 src/kelder/provision.py    create and provision the guest (kelder self setup)
 src/kelder/smoketest.py    test a smolvm upgrade (kelder self smoketest)
 src/kelder/release.py      fetch a smolvm release to test before upgrading

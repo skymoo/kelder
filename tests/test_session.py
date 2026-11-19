@@ -16,9 +16,12 @@ class FakeVm:
         self.calls = []
         self.detach_fails = False
         self.boots = False   # whether start() finds the machine stopped
+        self.room = []       # what make_room() was asked for
+        self.has_room = True
 
-    def start(self):
+    def start(self, directories=0):
         self.calls.append("start")
+        self.started_for = directories
         return self.boots
 
     def stop(self):
@@ -27,6 +30,10 @@ class FakeVm:
 
     def attached(self, d):
         return d in self.mounted
+
+    def make_room(self, directories):
+        self.room.append(directories)
+        return self.has_room
 
     def attach(self, d):
         self.calls.append(f"attach {d}")
@@ -123,6 +130,21 @@ class SessionTest(unittest.TestCase):
         self.assertIn("could not detach /a", self.err.getvalue())
         self.assertEqual(self.paths(s), ["/a"])
         self.assertNotIn("stop", self.vm.calls)
+
+    def test_room_is_asked_for_the_directories_not_yet_attached(self):
+        first = self.session("/a", "/b")
+        first.attach()
+        self.assertEqual(self.vm.started_for, 2)
+        self.assertEqual(self.vm.room, [2])
+        self.session("/a", "/b").attach()   # the same set: nothing is missing
+        self.assertEqual(self.vm.room, [2])
+
+    def test_no_room_is_fatal_before_anything_is_attached(self):
+        self.vm.has_room = False
+        with self.assertRaises(SystemExit):
+            self.session("/a", "/b").attach()
+        self.assertIn("could not make room", self.err.getvalue())
+        self.assertNotIn("attach /a", self.vm.calls)
 
     def test_a_failed_detach_at_start_is_fatal(self):
         crashed = self.session("/a")

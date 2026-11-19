@@ -30,6 +30,7 @@ PACKAGES = [
     "iproute2",
     "openssh-client",
     "procps",
+    "psmisc",
     "python3",
     # project tooling
     "make",
@@ -94,6 +95,13 @@ export PATH="$HOME/.local/bin:$PATH"
 command -v claude >/dev/null || exit 0
 claude update
 """
+
+# podman reaches the session user's systemd over D-Bus. The user's bus comes
+# with dbus-user-session, which podman brings in after that systemd has
+# started, so its socket would only be there from the next boot; without it
+# every podman command warns and falls back to cgroupfs. A machine with no
+# systemd for the user (smolvm) has nothing to start.
+START_USER_BUS = "systemctl --user start dbus.socket 2>/dev/null || true"
 
 WRITE_STAMP = 'date +%s >"$1"'
 
@@ -240,6 +248,7 @@ def run(packages: list[str] | None = None, project: str | None = None) -> None:
         print(f"Extra packages for this project: {' '.join(packages)}")
     if update_guest(extra=packages)[0] != 0:
         die("could not update the guest")
+    guest("bash", "-c", START_USER_BUS)   # as the session's user
     root = asroot()
 
     # --- guest config --------------------------------------------------------

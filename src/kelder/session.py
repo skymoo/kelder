@@ -33,9 +33,10 @@ def _open(path: str | os.PathLike[str]) -> int:
 class Machine(Protocol):
     """What a Session needs from the machine: the machine module, or a stand-in."""
 
-    def start(self) -> bool: ...
+    def start(self, directories: int = 0) -> bool: ...
     def stop(self) -> bool: ...
     def attached(self, d: str) -> bool: ...
+    def make_room(self, directories: int) -> bool: ...
     def attach(self, d: str) -> bool: ...
     def detach(self, d: str) -> bool: ...
 
@@ -101,11 +102,18 @@ class Session:
         try:
             # Start the machine under the lock, so an exiting session can't stop
             # it between here and the attach.
-            if self.vm.start() and self.on_boot:
+            if self.vm.start(len(self.dirs)) and self.on_boot:
                 self.on_boot()
             self.sweep()
-            for d in self.dirs:
-                if not self.vm.attached(d) and not self.vm.attach(d):
+            # After the sweep, a directory is only still attached if another
+            # session has this same set, and then none of them is missing. So
+            # when any is missing no session is in the machine, and the
+            # backend may restart it to fit them.
+            missing = [d for d in self.dirs if not self.vm.attached(d)]
+            if missing and not self.vm.make_room(len(missing)):
+                die(f"could not make room in machine '{settings.VM}' for {len(missing)} directories")
+            for d in missing:
+                if not self.vm.attach(d):
                     die(f"could not attach {d}")
             for d in self.dirs:
                 key = self._key(d)
