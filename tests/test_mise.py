@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from kelder import mise, smolvm
+from kelder import machine, mise
 
 
 class Mise(unittest.TestCase):
@@ -22,7 +22,7 @@ class Mise(unittest.TestCase):
                     (Path(tmp) / name).unlink()
 
     def missing(self, rc, out):
-        with mock.patch.object(smolvm, "guest", return_value=(rc, out)) as guest:
+        with mock.patch.object(machine, "guest", return_value=(rc, out)) as guest:
             result = mise.missing("/proj")
         guest.assert_called_once_with("bash", "-c", mise.MISSING, "_", "/proj", capture="out")
         return result

@@ -9,7 +9,11 @@ called by; the tests link it into a directory at the front of PATH.
                       every command succeeds, device_del is followed by
                       DEVICE_DELETED and quit ends it
   virtiofsd           makes its socket and waits to be stopped
-  ssh                 runs the command it is given locally, as the "guest"
+  ssh                 runs the command it is given locally, as the "guest";
+                      with FAKE_QEMU_NOEXEC=1 it runs nothing, prints 0 for
+                      `id -u` and exits 124 for `timeout`, but still powers
+                      the machine off
+  ssh-keygen          writes a key pair where -f says
   sudo                runs its arguments
   poweroff            stops the stand-in QEMU
   anything else       (mount, umount, rmdir, fuser, ...) succeeds and does
@@ -102,7 +106,17 @@ elif name == "virtiofsd":
     virtiofsd()
 elif name == "ssh":
     trace(name, *(["-t"] if "-t" in args else []), args[-1])
-    os.execvp("bash", ["bash", "-c", args[-1]])
+    command = args[-1].removeprefix("sudo ")
+    if not os.environ.get("FAKE_QEMU_NOEXEC") or command == "poweroff":
+        os.execvp("bash", ["bash", "-c", args[-1]])
+    if command == "id -u":
+        print(0)
+    sys.exit(124 if command.startswith("timeout ") else 0)
+elif name == "ssh-keygen":
+    trace(name, *args)
+    for suffix, text in (("", "PRIVATE KEY\n"), (".pub", "ssh-ed25519 AAAA kelder-test\n")):
+        with open(option("-f") + suffix, "w") as f:
+            f.write(text)
 elif name == "sudo":
     os.execvp(args[0], args)
 elif name == "poweroff":

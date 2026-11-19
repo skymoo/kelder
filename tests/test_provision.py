@@ -1,19 +1,22 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Adam Mercer
-"""`self setup` and `self smoketest` against tests/fake_smolvm.py, which
+"""`self setup` and `self smoketest` against tests/fake_qemu.py, which
 records the calls and runs nothing in a guest."""
 import contextlib
 import functools
 import io
 import json
 import os
+import shlex
 import tempfile
 import time
 import unittest
 from pathlib import Path
 from unittest import mock
 
-from kelder import mise, provision, release, settings, smoketest, smolvm
+from test_end_to_end import link_stand_ins, stop_stand_ins
+
+from kelder import mise, provision, qemu, release, settings, smoketest, smolvm
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -23,26 +26,36 @@ class Provision(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.tmp = Path(tmp.name).resolve()
-        (self.tmp / "home/proj").mkdir(parents=True)
+        for d in ("home/proj", "bin", "run"):
+            (self.tmp / d).mkdir(parents=True)
+        link_stand_ins(self.tmp / "bin")
+        (self.tmp / "image.qcow2").touch()
         self.trace = self.tmp / "trace"
         for patch in (
             mock.patch.multiple(
                 settings, VM="fake", HOME=str(self.tmp / "home"), DRY_RUN=False,
                 CLAUDE_STATE=str(self.tmp / "state"), GUEST_CLAUDE_STATE="/var/lib/kelder"),
-            mock.patch.object(smolvm, "SMOLVM_BIN", str(ROOT / "tests/fake_smolvm.py")),
-            mock.patch.dict(os.environ, {"SMOLVM_TRACE": str(self.trace),
-                                         "FAKE_SMOLVM_NOEXEC": "1", "FAKE_SMOLVM_FRESH": "1",
-                                         "XDG_RUNTIME_DIR": str(self.tmp)}),
+            mock.patch.dict(os.environ, {
+                "PATH": f"{self.tmp}/bin:{os.environ['PATH']}", "BACKEND": "qemu",
+                "QEMU_TRACE": str(self.trace), "FAKE_QEMU_NOEXEC": "1",
+                "XDG_RUNTIME_DIR": str(self.tmp / "run"), "XDG_DATA_HOME": str(self.tmp / "data"),
+                "XDG_CACHE_HOME": str(self.tmp / "cache")}),
             mock.patch.object(provision, "host_checks"),
             mock.patch.object(provision, "host_timezone", return_value="Europe/London"),
+            mock.patch.object(qemu, "pull", return_value=self.tmp / "image.qcow2"),   # no download
         ):
             patch.start()
             self.addCleanup(patch.stop)
-        os.environ.pop("IMAGE", None)
         os.environ.pop("VM", None)
+        self.addCleanup(stop_stand_ins, self.tmp)   # setup leaves the machine running
 
-    def calls(self):
-        return [json.loads(line) for line in self.trace.read_text().splitlines()]
+    def machine_dir(self, name="fake"):
+        return self.tmp / "data/kelder/machines" / name
+
+    def calls(self, name=None):
+        """The stand-ins' calls so far; with a name, the arguments of that program's calls."""
+        entries = [json.loads(line) for line in self.trace.read_text().splitlines()]
+        return entries if name is None else [e[1:] for e in entries if e[0] == name]
 
     def run_quietly(self, fn):
         out = io.StringIO()
@@ -51,14 +64,24 @@ class Provision(unittest.TestCase):
         return out.getvalue()
 
     def guest_commands(self):
-        return [c[c.index("--") + 1:] for c in self.calls() if c[:2] == ["machine", "exec"]]
+        """What was run in the guest over ssh, each as its list of arguments."""
+        return [shlex.split(call[-1]) for call in self.calls("ssh")]
 
     def test_setup_creates_and_provisions_a_new_machine(self):
         out = self.run_quietly(provision.run)
+        self.assertIn("Creating machine 'fake'...", out)
         self.assertIn("Setup done.", out)
         self.assertEqual(oct((self.tmp / "state").stat().st_mode & 0o777), "0o700")
-        self.assertIn(["machine", "create", "--name", "fake", "--nested", "--net", "--image", "debian",
-                       "-v", f"{self.tmp}/state:/var/lib/kelder"], self.calls())
+        for name in ("disk.qcow2", "id_ed25519", "user-data", "meta-data"):
+            self.assertTrue((self.machine_dir() / name).exists(), name)
+        self.assertEqual(oct(self.machine_dir().stat().st_mode & 0o777), "0o700")
+        (resize,) = self.calls("qemu-img")
+        self.assertEqual(resize[0], "resize")
+        (machine,) = self.calls("qemu-system-x86_64")
+        ports = [a for a in machine if a.startswith("pcie-root-port,")]
+        self.assertEqual(len(ports), qemu.SLOTS + 1)   # nothing said how many directories
+        shared = [a for call in self.calls("virtiofsd") for a in call if a.startswith("--shared-dir=")]
+        self.assertEqual(shared, [f"--shared-dir={self.tmp}/state"])
         commands = self.guest_commands()
         apt = next(c for c in commands if c[2:3] == [provision.APT])
         self.assertEqual(apt[:2], ["bash", "-c"])   # the fake guest is root: no sudo
@@ -73,7 +96,6 @@ class Provision(unittest.TestCase):
                         commands.index(["bash", "-c", provision.WRITE_STAMP, "_", provision.STAMP]))
         written = {c[5]: c[6] for c in commands if c[2:3] == [provision.WRITE_FILE]}
         self.assertEqual(written, {
-            "/etc/containers/containers.conf.d/50-smolvm-tsi.conf": "644",
             "/usr/local/bin/testvm": "755",
             "/usr/local/bin/smoketest": "755",
         })
@@ -95,22 +117,21 @@ class Provision(unittest.TestCase):
         out = self.run_quietly(lambda: provision.run(project=proj))
         self.assertLess(out.index(f"Installing the tools listed in {proj}'s mise config..."),
                         out.index("Setup done."))
-        calls = self.calls()
-        # --stream: its output is shown as it arrives, not when it ends
-        install = ["machine", "exec", "--name", "fake", "--stream", "--",
-                   "bash", "-c", mise.INSTALL, "_", proj]
-        attach = calls.index(["machine", "mount", "add", "--name", "fake", "-v", f"{proj}:{proj}"])
-        detach = calls.index(["machine", "mount", "rm", "--name", "fake", "-t", proj])
-        self.assertLess(attach, calls.index(install))
-        self.assertLess(calls.index(install), detach)
+        commands = self.guest_commands()
+        install = commands.index(["bash", "-c", mise.INSTALL, "_", proj])
+        attach = next(i for i, c in enumerate(commands) if c[-1] == proj and "mount -t virtiofs" in c[-3])
+        detach = next(i for i, c in enumerate(commands) if c[-2:] == ["umount", proj])
+        self.assertLess(attach, install)
+        self.assertLess(install, detach)
 
     def test_setup_reuses_an_existing_machine(self):
-        with mock.patch.dict(os.environ, {"IMAGE": "ubuntu"}):
-            os.environ.pop("FAKE_SMOLVM_FRESH")
-            out = self.run_quietly(provision.run)
+        self.machine_dir().mkdir(parents=True)
+        (self.machine_dir() / "disk.qcow2").touch()
+        out = self.run_quietly(provision.run)
         self.assertIn("Machine 'fake' exists; reusing it.", out)
-        self.assertIn("IMAGE is ignored for an existing machine", out)
-        self.assertFalse(any(c[:2] == ["machine", "create"] for c in self.calls()))
+        self.assertNotIn("Creating machine", out)
+        self.assertEqual(self.calls("qemu-img"), [])
+        self.assertFalse((self.machine_dir() / "id_ed25519").exists())
 
     def test_smoketest_refuses_the_main_machine(self):
         with mock.patch.dict(os.environ, {"VM": "kelder"}), self.assertRaises(SystemExit):
@@ -123,6 +144,54 @@ class Provision(unittest.TestCase):
                 self.run_quietly(functools.partial(smoketest.run, args))
         self.assertFalse(self.trace.exists())
 
+    def test_smoketest_of_a_release_is_refused_for_a_qemu_machine(self):
+        with _chdir(self.tmp / "home/proj"), mock.patch.object(release, "use") as use, \
+                self.assertRaises(SystemExit):
+            self.run_quietly(functools.partial(smoketest.run, ["--release", "1.2.3"]))
+        use.assert_not_called()
+
+    def test_smoketest_uses_a_throwaway_machine_and_deletes_it(self):
+        proj = str(self.tmp / "home/proj")
+        with _chdir(proj):
+            out = self.run_quietly(smoketest.run)
+        self.assertEqual(settings.VM, "kelder-test")
+        (machine,) = self.calls("qemu-system-x86_64")
+        self.assertEqual(machine[machine.index("-name") + 1], "kelder-kelder-test")
+        commands = self.guest_commands()
+        attach = next(i for i, c in enumerate(commands) if c[-1] == proj and "mount -t virtiofs" in c[-3])
+        self.assertLess(attach, commands.index(["bash", "-lc", 'smoketest "$1"', "_", proj]))
+        self.assertIn("All checks passed; deleted machine 'kelder-test'.", out)
+        self.assertEqual(commands[-1][-1], "poweroff")
+        self.assertFalse(self.machine_dir("kelder-test").exists())
+        self.assertFalse(any((self.tmp / "run").glob("kelder/*/qemu/qemu.pid")))
+
+
+class SmolvmRelease(unittest.TestCase):
+    """`self smoketest --release`, which is smolvm's, against tests/fake_smolvm.py."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.tmp = Path(tmp.name).resolve()
+        (self.tmp / "home/proj").mkdir(parents=True)
+        self.trace = self.tmp / "trace"
+        for patch in (
+            mock.patch.multiple(
+                settings, VM="fake", HOME=str(self.tmp / "home"), DRY_RUN=False,
+                CLAUDE_STATE=str(self.tmp / "state"), GUEST_CLAUDE_STATE="/var/lib/kelder"),
+            mock.patch.object(smolvm, "SMOLVM_BIN", str(ROOT / "tests/fake_smolvm.py")),
+            mock.patch.dict(os.environ, {"SMOLVM_TRACE": str(self.trace),
+                                         "FAKE_SMOLVM_NOEXEC": "1", "FAKE_SMOLVM_FRESH": "1",
+                                         "XDG_RUNTIME_DIR": str(self.tmp),
+                                         "XDG_DATA_HOME": str(self.tmp / "data")}),
+            mock.patch.object(provision, "host_checks"),
+            mock.patch.object(provision, "host_timezone", return_value="Europe/London"),
+        ):
+            patch.start()
+            self.addCleanup(patch.stop)
+        for name in ("IMAGE", "VM", "BACKEND"):
+            os.environ.pop(name, None)
+
     def test_smoketest_of_a_release_removes_its_directory(self):
         made = self.tmp / "release"
 
@@ -130,28 +199,15 @@ class Provision(unittest.TestCase):
             made.mkdir()
             return str(made)
 
-        with _chdir(self.tmp / "home/proj"), mock.patch.object(release, "use", use):
-            out = self.run_quietly(functools.partial(smoketest.run, ["--release", "1.2.3"]))
-        self.assertIn("All checks passed", out)
+        out = io.StringIO()
+        with _chdir(self.tmp / "home/proj"), mock.patch.object(release, "use", use), \
+                contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+            smoketest.run(["--release", "1.2.3"])
+        self.assertIn("PASS     host: machine status fails for an unknown machine", out.getvalue())
+        self.assertIn("All checks passed", out.getvalue())
         self.assertFalse(made.exists())
-
-    def test_smoketest_of_a_release_is_refused_for_a_qemu_machine(self):
-        with _chdir(self.tmp / "home/proj"), mock.patch.dict(os.environ, {"BACKEND": "qemu"}), \
-                mock.patch.object(release, "use") as use, self.assertRaises(SystemExit):
-            self.run_quietly(functools.partial(smoketest.run, ["--release", "1.2.3"]))
-        use.assert_not_called()
-
-    def test_smoketest_uses_a_throwaway_machine_and_deletes_it(self):
-        with _chdir(self.tmp / "home/proj"):
-            out = self.run_quietly(smoketest.run)
-        self.assertEqual(settings.VM, "kelder-test")
-        self.assertIn(["machine", "mount", "add", "--name", "kelder-test", "-v",
-                       f"{self.tmp}/home/proj:{self.tmp}/home/proj"], self.calls())
-        self.assertIn(["bash", "-lc", 'smoketest "$1"', "_", f"{self.tmp}/home/proj"],
-                      self.guest_commands())
-        self.assertIn("PASS     host: machine status fails for an unknown machine", out)
-        self.assertIn("PASS     host: machine start succeeds on a running machine", out)
-        self.assertEqual(self.calls()[-1], ["machine", "delete", "--name", "kelder-test", "-f"])
+        calls = [json.loads(line) for line in self.trace.read_text().splitlines()]
+        self.assertEqual(calls[-1], ["machine", "delete", "--name", "kelder-test", "-f"])
 
 
 class UpdateIfStale(unittest.TestCase):
