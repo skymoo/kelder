@@ -8,7 +8,7 @@ from typing import Literal, NoReturn
 PROG = "kelder"
 HOME = os.path.expanduser("~")
 
-# What a command's output is done with; see smolvm.run.
+# What a command's output is done with; see qemu.run.
 Capture = Literal["all", "out", "drop"] | None
 
 
@@ -28,7 +28,8 @@ CLAUDE_STATE = env(
 )
 # Overridable so the tests can run the guest side locally; nothing else should set it.
 GUEST_CLAUDE_STATE = env("GUEST_CLAUDE_STATE", "/var/lib/kelder")
-# DRY_RUN=1 prints every smolvm call and runs none.
+# DRY_RUN=1 prints the commands that would start, change and enter the
+# machine, and runs none.
 DRY_RUN = os.environ.get("DRY_RUN") == "1"
 
 

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Adam Mercer
-"""Create and provision the smolvm guest that kelder runs Claude Code in.
+"""Create and provision the guest that kelder runs Claude Code in.
 
 Run it as `kelder self setup`. Safe to re-run: it updates packages,
 config and testvm on an existing machine. The machine has no project
@@ -10,7 +10,7 @@ with a .kelder.toml, it sets up that project's machine and installs the
 packages the file lists; from one with a mise config, it installs the
 tools that lists (see mise.py).
 
-  VM=name IMAGE=debian kelder self setup   machine name / base image
+  VM=name kelder self setup   machine name
 """
 import base64
 import os
@@ -51,8 +51,7 @@ PACKAGES = [
     "qemu-utils",
 ]
 
-# Files from this package's guest/ directory, with where they go in the guest;
-# machine.guest_files() adds the backend's own.
+# Files from this package's guest/ directory, with where they go in the guest.
 GUEST_FILES = [
     ("testvm", "/usr/local/bin/testvm", "755"),
     ("smoketest", "/usr/local/bin/smoketest", "755"),
@@ -99,8 +98,8 @@ claude update
 # podman reaches the session user's systemd over D-Bus. The user's bus comes
 # with dbus-user-session, which podman brings in after that systemd has
 # started, so its socket would only be there from the next boot; without it
-# every podman command warns and falls back to cgroupfs. A machine with no
-# systemd for the user (smolvm) has nothing to start.
+# every podman command warns and falls back to cgroupfs. Root has no user
+# systemd over ssh, and then there is nothing to start.
 START_USER_BUS = "systemctl --user start dbus.socket 2>/dev/null || true"
 
 WRITE_STAMP = 'date +%s >"$1"'
@@ -252,7 +251,7 @@ def run(packages: list[str] | None = None, project: str | None = None) -> None:
     root = asroot()
 
     # --- guest config --------------------------------------------------------
-    for name, dest, mode in [*machine.guest_files(), *GUEST_FILES]:
+    for name, dest, mode in GUEST_FILES:
         data = files("kelder").joinpath("guest", name).read_bytes()
         if guest(*root, "bash", "-c", WRITE_FILE, "_",
                  base64.b64encode(data).decode(), dest, mode)[0] != 0:

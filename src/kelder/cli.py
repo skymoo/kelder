@@ -32,7 +32,6 @@ Usage: kelder [--] [CLAUDE_ARGS...]
        kelder self [-C DIR] [-a DIR]... [--] [CLAUDE_ARGS...]
        kelder self shell [-C DIR] [-a DIR]...
        kelder self COMMAND
-       kelder self smoketest [--release VERSION]
 
 Run Claude Code in the guest with DIR (default: the current
 directory) attached at the same path it has on the host. Only arguments
@@ -48,9 +47,8 @@ Commands (after self):
   setup      create and provision the machine (safe to re-run)
   shell      open a shell in the guest instead of starting Claude,
              with the same directories and environment
-  smoketest  test the installed smolvm in a throwaway machine; with
-             --release VERSION, test that smolvm release instead,
-             without installing it; with BACKEND=qemu, test QEMU
+  smoketest  test the host's QEMU, virtiofsd and ssh in a throwaway
+             machine
   version    show kelder's version
 
 Every other argument is passed to claude unchanged; run
@@ -71,12 +69,8 @@ what a mise.toml in DIR lists (see the README).
 Environment:
   VM            machine name; overrides the project file
                 (default: kelder; kelder-test for self smoketest)
-  BACKEND       qemu makes self setup create a QEMU/KVM machine in
-                place of a smolvm one (see the README)
   CLAUDE_STATE  Claude's state directory on the host
                 (default: ~/.local/share/kelder/claude)
-  IMAGE         base image for a new smolvm machine (self setup;
-                default: debian)
   NO_UPDATE     1 skips the weekly package update when a session
                 boots the machine
   DRY_RUN       1 prints the machine's commands instead of running

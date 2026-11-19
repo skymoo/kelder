@@ -33,7 +33,7 @@ from .settings import die
 NAME = ".kelder.toml"
 KEYS = {"vm", "packages", "memory"}
 
-# The machine name ends up in a file path and on smolvm's command line, and
+# The machine name ends up in file paths and on QEMU's command line, and
 # package names on apt-get's, so neither may look like an option or a path.
 VM_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*")
 # Debian's rule for package names (Policy 5.6.1).

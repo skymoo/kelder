@@ -74,7 +74,6 @@ class EndToEnd(unittest.TestCase):
             "XDG_RUNTIME_DIR": str(self.tmp / "run"),
             "XDG_DATA_HOME": str(self.tmp / "data"),
             "VM": "fake",
-            "BACKEND": "qemu",
             "NO_UPDATE": "1",   # the stand-in would run the update on this machine
             "QEMU_TRACE": str(self.trace),
             # The guest side runs locally, so its state path is the host one.
@@ -238,16 +237,6 @@ class EndToEnd(unittest.TestCase):
         self.assertEqual(rc, 1)
         self.assertIn("machine 'fake' does not exist; run 'kelder self setup' first", out)
         self.assertEqual(self.calls(), [])
-
-    def test_a_machine_qemu_made_needs_no_BACKEND(self):
-        env = dict(self.env)
-        del env["BACKEND"]
-        p = subprocess.run(self.command("hello"), cwd=self.tmp / "proj", env=env, check=False,
-                           stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                           text=True)
-        self.assertEqual(p.returncode, 0, p.stdout)
-        self.assertIn("argv: hello", p.stdout)
-        self.assertEqual(len(self.calls("qemu-system-x86_64")), 1)
 
     def test_project_file_names_the_machine_unless_vm_is_set(self):
         self.make_machine("mine")

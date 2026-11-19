@@ -3,27 +3,17 @@
 """The machine sessions run in.
 
 The rest of kelder reaches the machine through these functions; what they
-do is up to the backend the machine is on: smolvm, or QEMU for a machine
-made with BACKEND=qemu (see qemu.py).
+do is up to the backend, and QEMU is the only one (see qemu.py).
 """
 from types import ModuleType
 
-from . import qemu, settings, smolvm
-from .settings import Capture, die
+from . import qemu
+from .settings import Capture
 
 
 def backend() -> ModuleType:
-    """The module that runs the machine.
-
-    BACKEND names it. Without that, a machine made by the QEMU backend is a
-    QEMU machine and every other name is smolvm's.
-    """
-    name = settings.env("BACKEND", "")
-    if name not in ("", "qemu", "smolvm"):
-        die(f"unknown BACKEND '{name}'; it is qemu or smolvm")
-    if name == "qemu" or (not name and qemu.exists()):
-        return qemu
-    return smolvm
+    """The module that runs the machine."""
+    return qemu
 
 
 def require() -> None:
@@ -101,14 +91,3 @@ def guest_ok(*cmd: str) -> bool:
 def session(tty: bool, cmd: list[str]) -> int:
     """Run a command in the guest on this terminal; returns its exit status."""
     return backend().session(tty, cmd)
-
-
-def guest_files() -> list[tuple[str, str, str]]:
-    """Files from guest/ only this backend's machines need: (name, path in the guest, mode)."""
-    return backend().guest_files()
-
-
-def smoketest_host() -> int:
-    """Check, from the host, the backend behaviour kelder relies on; prints a
-    line for each check and returns how many failed."""
-    return backend().smoketest_host()

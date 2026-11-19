@@ -16,9 +16,7 @@ from unittest import mock
 
 from test_end_to_end import link_stand_ins, stop_stand_ins
 
-from kelder import mise, provision, qemu, release, settings, smoketest, smolvm
-
-ROOT = Path(__file__).resolve().parent.parent
+from kelder import mise, provision, qemu, settings, smoketest
 
 
 class Provision(unittest.TestCase):
@@ -36,7 +34,7 @@ class Provision(unittest.TestCase):
                 settings, VM="fake", HOME=str(self.tmp / "home"), DRY_RUN=False,
                 CLAUDE_STATE=str(self.tmp / "state"), GUEST_CLAUDE_STATE="/var/lib/kelder"),
             mock.patch.dict(os.environ, {
-                "PATH": f"{self.tmp}/bin:{os.environ['PATH']}", "BACKEND": "qemu",
+                "PATH": f"{self.tmp}/bin:{os.environ['PATH']}",
                 "QEMU_TRACE": str(self.trace), "FAKE_QEMU_NOEXEC": "1",
                 "XDG_RUNTIME_DIR": str(self.tmp / "run"), "XDG_DATA_HOME": str(self.tmp / "data"),
                 "XDG_CACHE_HOME": str(self.tmp / "cache")}),
@@ -138,17 +136,10 @@ class Provision(unittest.TestCase):
             self.run_quietly(smoketest.run)
         self.assertFalse(self.trace.exists())
 
-    def test_smoketest_refuses_arguments_it_does_not_know(self):
-        for args in (["--bogus"], ["--release"], ["--release", "1.2.3", "extra"]):
-            with self.assertRaises(SystemExit):
-                self.run_quietly(functools.partial(smoketest.run, args))
+    def test_smoketest_takes_no_arguments(self):
+        with self.assertRaises(SystemExit):
+            self.run_quietly(functools.partial(smoketest.run, ["--bogus"]))
         self.assertFalse(self.trace.exists())
-
-    def test_smoketest_of_a_release_is_refused_for_a_qemu_machine(self):
-        with _chdir(self.tmp / "home/proj"), mock.patch.object(release, "use") as use, \
-                self.assertRaises(SystemExit):
-            self.run_quietly(functools.partial(smoketest.run, ["--release", "1.2.3"]))
-        use.assert_not_called()
 
     def test_smoketest_uses_a_throwaway_machine_and_deletes_it(self):
         proj = str(self.tmp / "home/proj")
@@ -164,50 +155,6 @@ class Provision(unittest.TestCase):
         self.assertEqual(commands[-1][-1], "poweroff")
         self.assertFalse(self.machine_dir("kelder-test").exists())
         self.assertFalse(any((self.tmp / "run").glob("kelder/*/qemu/qemu.pid")))
-
-
-class SmolvmRelease(unittest.TestCase):
-    """`self smoketest --release`, which is smolvm's, against tests/fake_smolvm.py."""
-
-    def setUp(self):
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        self.tmp = Path(tmp.name).resolve()
-        (self.tmp / "home/proj").mkdir(parents=True)
-        self.trace = self.tmp / "trace"
-        for patch in (
-            mock.patch.multiple(
-                settings, VM="fake", HOME=str(self.tmp / "home"), DRY_RUN=False,
-                CLAUDE_STATE=str(self.tmp / "state"), GUEST_CLAUDE_STATE="/var/lib/kelder"),
-            mock.patch.object(smolvm, "SMOLVM_BIN", str(ROOT / "tests/fake_smolvm.py")),
-            mock.patch.dict(os.environ, {"SMOLVM_TRACE": str(self.trace),
-                                         "FAKE_SMOLVM_NOEXEC": "1", "FAKE_SMOLVM_FRESH": "1",
-                                         "XDG_RUNTIME_DIR": str(self.tmp),
-                                         "XDG_DATA_HOME": str(self.tmp / "data")}),
-            mock.patch.object(provision, "host_checks"),
-            mock.patch.object(provision, "host_timezone", return_value="Europe/London"),
-        ):
-            patch.start()
-            self.addCleanup(patch.stop)
-        for name in ("IMAGE", "VM", "BACKEND"):
-            os.environ.pop(name, None)
-
-    def test_smoketest_of_a_release_removes_its_directory(self):
-        made = self.tmp / "release"
-
-        def use(version):
-            made.mkdir()
-            return str(made)
-
-        out = io.StringIO()
-        with _chdir(self.tmp / "home/proj"), mock.patch.object(release, "use", use), \
-                contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
-            smoketest.run(["--release", "1.2.3"])
-        self.assertIn("PASS     host: machine status fails for an unknown machine", out.getvalue())
-        self.assertIn("All checks passed", out.getvalue())
-        self.assertFalse(made.exists())
-        calls = [json.loads(line) for line in self.trace.read_text().splitlines()]
-        self.assertEqual(calls[-1], ["machine", "delete", "--name", "kelder-test", "-f"])
 
 
 class UpdateIfStale(unittest.TestCase):

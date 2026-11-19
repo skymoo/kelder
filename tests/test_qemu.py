@@ -11,7 +11,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from kelder import machine, qemu, settings, smolvm
+from kelder import qemu, settings
 
 
 class Base(unittest.TestCase):
@@ -28,30 +28,10 @@ class Base(unittest.TestCase):
         ):
             patch.start()
             self.addCleanup(patch.stop)
-        os.environ.pop("BACKEND", None)
 
     def make_machine(self):
         qemu.machine_dir().mkdir(parents=True)
         (qemu.machine_dir() / "disk.qcow2").touch()
-
-
-class Backend(Base):
-    def test_a_machine_is_smolvms_unless_qemu_made_it(self):
-        self.assertIs(machine.backend(), smolvm)
-        self.make_machine()
-        self.assertIs(machine.backend(), qemu)
-
-    def test_BACKEND_names_it_either_way(self):
-        os.environ["BACKEND"] = "qemu"
-        self.assertIs(machine.backend(), qemu)
-        self.make_machine()
-        os.environ["BACKEND"] = "smolvm"
-        self.assertIs(machine.backend(), smolvm)
-
-    def test_an_unknown_BACKEND_is_refused(self):
-        os.environ["BACKEND"] = "xen"
-        with self.assertRaises(SystemExit), mock.patch("sys.stderr"):
-            machine.backend()
 
 
 class Commands(Base):

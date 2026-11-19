@@ -3,49 +3,30 @@
 # Copyright (C) 2026 Adam Mercer
 #
 # smoketest: check, from inside the guest, the machine behaviours kelder
-# relies on. Run it in a throwaway machine after upgrading smolvm or QEMU:
+# relies on. `kelder self smoketest` runs it in a throwaway machine; by hand:
 #
 #   VM=kelder-test kelder self setup
 #   VM=kelder-test kelder     then, in that session: smoketest [DIR]
 #
 # DIR is an attached host directory (default: the current directory).
-# PASS/FAIL lines are behaviour kelder needs; KNOWN lines are smolvm bugs
-# the guest config works around; CHANGED lines mean a known bug is gone and its
-# workaround may be removable. A QEMU machine has neither the bugs nor the
-# workarounds, so there those checks are plain PASS/FAIL. Exits non-zero if
-# anything FAILs.
+# Each line is PASS or FAIL. Exits non-zero if anything FAILs.
 set -uo pipefail
 
 dir=${1:-$PWD}
-# smolvm's init lives in /run/smolvm; a QEMU machine boots a stock Debian.
-if [[ -d /run/smolvm ]]; then backend=smolvm; else backend=qemu; fi
 image=docker.io/library/python:3-slim
 fails=0
 pass()    { printf 'PASS     %s\n' "$1"; }
 fail()    { printf 'FAIL     %s\n' "$1"; fails=$((fails + 1)); }
-known()   { printf 'KNOWN    %s\n' "$1"; }
-changed() { printf 'CHANGED  %s\n' "$1"; }
 
 # --- users -------------------------------------------------------------------
 uid=$(id -u)
-if [[ $backend == smolvm ]]; then
-  who=root
-  if [[ $uid == 0 ]]; then pass "exec session runs as root"
-  else fail "exec session runs as uid $uid, expected 0"; fi
+# Sessions run as a user with the host user's uid, who may sudo.
+owner=$(stat -c %u "$dir")
+if [[ $uid == "$owner" ]]; then pass "session runs as uid $uid, the owner of $dir"
+else fail "session runs as uid $uid, $dir belongs to uid $owner"; fi
 
-  pid1=$(ps -o uid= -p 1 | tr -d ' ')
-  if [[ $pid1 == 0 ]]; then pass "PID 1 runs as root"
-  else fail "PID 1 runs as uid $pid1, expected 0"; fi
-else
-  # Sessions run as a user with the host user's uid, who may sudo.
-  who="the session"
-  owner=$(stat -c %u "$dir")
-  if [[ $uid == "$owner" ]]; then pass "session runs as uid $uid, the owner of $dir"
-  else fail "session runs as uid $uid, $dir belongs to uid $owner"; fi
-
-  if sudo -n true 2>/dev/null; then pass "sudo works without a password"
-  else fail "sudo needs a password or is not allowed"; fi
-fi
+if sudo -n true 2>/dev/null; then pass "sudo works without a password"
+else fail "sudo needs a password or is not allowed"; fi
 
 # --- attached directory ownership --------------------------------------------
 if ! tmp=$(mktemp -p "$dir" .smoketest.XXXXXX); then
@@ -55,9 +36,9 @@ else
   got=$(stat -c %u "$tmp")
   if [[ $got == "$owner" ]]; then
     rm -f "$tmp"
-    pass "files $who creates in $dir belong to uid $owner, the directory's owner"
+    pass "files the session creates in $dir belong to uid $owner, the directory's owner"
   else
-    fail "files $who creates in $dir belong to uid $got, the directory belongs to uid $owner (kept $tmp)"
+    fail "files the session creates in $dir belong to uid $got, the directory belongs to uid $owner (kept $tmp)"
   fi
 fi
 
@@ -65,8 +46,8 @@ fi
 if ! podman pull -q "$image" >/dev/null; then
   fail "cannot pull $image; container checks skipped"
 else
-  # On smolvm, a connected UDP socket in a container netns fails on its 2nd
-  # send (EINVAL).
+  # A second send on a connected UDP socket in a container: glibc's resolver
+  # does this, and a machine without a real network card has failed it.
   udp='import socket
 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 s.connect(("1.1.1.1", 53))
@@ -76,30 +57,10 @@ except OSError as e:
     print(e.errno)'
   # Only what the check prints decides: podman's own warnings go to stderr.
   r=$(podman run --rm "$image" python3 -c "$udp")
-  case $backend:$r in
-    smolvm:ok) changed "connected UDP in containers works; the TSI bug may be fixed" ;;
-    smolvm:22) known "connected UDP in containers fails on the 2nd send (EINVAL)" ;;
-    qemu:ok)   pass "connected UDP in containers works" ;;
-    *)         fail "container UDP check gave: $r" ;;
-  esac
+  if [[ $r == ok ]]; then pass "connected UDP in containers works"
+  else fail "container UDP check gave: $r"; fi
 
-  if [[ $backend == smolvm ]]; then
-    if podman run --rm "$image" getent ahosts deb.debian.org >/dev/null; then
-      pass "container DNS resolves with containers-tsi.conf"
-    else
-      fail "container DNS fails even with containers-tsi.conf"
-    fi
-
-    override=$(mktemp)
-    printf '[containers]\ndns_options = []\n' >"$override"
-    if CONTAINERS_CONF_OVERRIDE=$override podman run --rm "$image" \
-         getent ahosts deb.debian.org >/dev/null; then
-      changed "container DNS works without single-request-reopen; containers-tsi.conf may be removable"
-    else
-      known "container DNS fails without single-request-reopen"
-    fi
-    rm -f "$override"
-  elif podman run --rm "$image" getent ahosts deb.debian.org >/dev/null; then
+  if podman run --rm "$image" getent ahosts deb.debian.org >/dev/null; then
     pass "container DNS resolves"
   else
     fail "container DNS fails"

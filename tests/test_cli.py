@@ -45,8 +45,8 @@ class ParseArgs(unittest.TestCase):
             self.assertEqual(cli.parse_args(["self", command]), (command, ".", [], []))
 
     def test_a_command_keeps_its_own_arguments(self):
-        self.assertEqual(cli.parse_args(["self", "smoketest", "--release", "1.2.3"]),
-                         ("smoketest", ".", [], ["--release", "1.2.3"]))
+        self.assertEqual(cli.parse_args(["self", "smoketest", "--bogus", "1.2.3"]),
+                         ("smoketest", ".", [], ["--bogus", "1.2.3"]))
 
     def test_shell_takes_the_directory_options(self):
         self.assertEqual(cli.parse_args(["self", "shell"]), ("shell", ".", [], []))

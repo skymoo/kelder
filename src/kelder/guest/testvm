@@ -36,8 +36,8 @@ STATE = Path(os.environ.get("TESTVM_STATE", HOME / ".local/state/testvm"))
 KEY = CACHE / "id_ed25519"
 SSH_OPTS = ["-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
             "-o", "LogLevel=ERROR", "-o", "IdentitiesOnly=yes", "-i", str(KEY)]
-# Boot with UEFI: under smolvm's nested KVM, BIOS GRUB resets the VM the moment
-# it jumps into the kernel, while OVMF boots the same image fine.
+# Boot with UEFI: under nested KVM, BIOS GRUB has been seen to reset the VM
+# the moment it jumps into the kernel, while OVMF boots the same image fine.
 OVMF_CODE = Path("/usr/share/OVMF/OVMF_CODE_4M.fd")
 OVMF_VARS = Path("/usr/share/OVMF/OVMF_VARS_4M.fd")
 BOOT_TIMEOUT = int(os.environ.get("TESTVM_BOOT_TIMEOUT", "300"))

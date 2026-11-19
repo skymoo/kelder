@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Self
 
 from . import settings
-from .settings import Capture, die, note, warn
+from .settings import Capture, die, note
 
 IMAGE = "debian-13"
 IMAGE_URL = "https://cloud.debian.org/images/cloud/trixie/latest/debian-13-genericcloud-amd64.qcow2"
@@ -96,7 +96,9 @@ def iso_tool() -> str | None:
 def run(argv: list[str], capture: Capture = None, stdin: int | None = subprocess.DEVNULL) -> tuple[int, str]:
     """Run a host command; returns (exit status, captured output).
 
-    capture is as for smolvm.run. DRY_RUN prints the command and runs nothing.
+    capture="all" collects stdout and stderr together, "out" collects stdout
+    and leaves stderr on the terminal, "drop" discards stdout. DRY_RUN prints
+    the command and runs nothing.
     """
     if settings.DRY_RUN:
         print("+ " + shlex.join(argv), file=sys.stderr)
@@ -341,8 +343,6 @@ def ensure(state: str, guest_state: str) -> None:
     if exists():
         print(f"Machine '{settings.VM}' exists; reusing it.")
     else:
-        if "IMAGE" in os.environ:
-            warn(f"IMAGE is ignored: QEMU machines are made from {IMAGE}")
         print(f"Creating machine '{settings.VM}'...")
         create()
     start()
@@ -489,14 +489,6 @@ def delete_command() -> str:
     """The command that deletes the machine, to show the user."""
     return (f"kill $(cat {shlex.quote(str(run_dir() / 'qemu.pid'))}); "
             f"rm -rf {shlex.quote(str(machine_dir()))}")
-
-
-def guest_files() -> list[tuple[str, str, str]]:
-    return []
-
-
-def smoketest_host() -> int:
-    return 0
 
 
 # --- attached directories ----------------------------------------------------

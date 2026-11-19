@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Adam Mercer
 """Stand-ins for the programs the QEMU backend runs, so kelder can be run
-with BACKEND=qemu and no QEMU. What it does depends on the name it is
+without QEMU. What it does depends on the name it is
 called by; the tests link it into a directory at the front of PATH.
 
   qemu-system-x86_64  writes its pidfile and serves QMP in the background:
