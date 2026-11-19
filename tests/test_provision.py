@@ -45,10 +45,13 @@ class Provision(unittest.TestCase):
             patch.start()
             self.addCleanup(patch.stop)
         os.environ.pop("VM", None)
-        self.addCleanup(stop_stand_ins, self.tmp)   # setup leaves the machine running
+        self.addCleanup(stop_stand_ins, self.tmp)   # whatever a failed test leaves running
 
     def machine_dir(self, name="fake"):
         return self.tmp / "data/kelder/machines" / name
+
+    def machine_running(self):
+        return any((self.tmp / "run").glob("kelder/*/qemu/qemu.pid"))
 
     def calls(self, name=None):
         """The stand-ins' calls so far; with a name, the arguments of that program's calls."""
@@ -103,6 +106,10 @@ class Provision(unittest.TestCase):
         bus = commands.index(["bash", "-c", provision.START_USER_BUS])
         self.assertLess(commands.index(apt), bus)
         self.assertLess(bus, commands.index(["podman", "info"]))
+        # Setup started the machine, so it stops it again.
+        self.assertIn("kelder: stopping machine 'fake'...", out)
+        self.assertEqual(commands[-1][-1], "poweroff")
+        self.assertFalse(self.machine_running())
 
     def test_setup_installs_a_projects_extra_packages(self):
         out = self.run_quietly(lambda: provision.run(["ansible-lint", "ldap-utils"]))
@@ -121,6 +128,15 @@ class Provision(unittest.TestCase):
         detach = next(i for i, c in enumerate(commands) if c[-2:] == ["umount", proj])
         self.assertLess(attach, install)
         self.assertLess(install, detach)
+
+    def test_setup_leaves_a_machine_it_found_running(self):
+        self.machine_dir().mkdir(parents=True)
+        (self.machine_dir() / "disk.qcow2").touch()
+        self.run_quietly(qemu.start)
+        out = self.run_quietly(provision.run)
+        self.assertNotIn("stopping machine", out)
+        self.assertEqual(len(self.calls("qemu-system-x86_64")), 1)
+        self.assertTrue(self.machine_running())
 
     def test_setup_reuses_an_existing_machine(self):
         self.machine_dir().mkdir(parents=True)

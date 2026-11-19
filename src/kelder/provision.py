@@ -4,7 +4,8 @@
 
 Run it as `kelder self setup`. Safe to re-run: it updates packages,
 config and testvm on an existing machine. The machine has no project
-mounted; kelder attaches one when it runs. Claude's state lives on the
+mounted; kelder attaches one when it runs. A machine setup had to start
+is stopped again when it is done. Claude's state lives on the
 host in $CLAUDE_STATE, so the machine is disposable. Run from a project
 with a .kelder.toml, it sets up that project's machine and installs the
 packages the file lists; from one with a mise config, it installs the
@@ -18,7 +19,7 @@ import subprocess
 import time
 from importlib.resources import files
 
-from . import machine, mise, settings
+from . import machine, mise, session, settings
 from .machine import guest, guest_ok
 from .settings import die, note, warn
 
@@ -226,11 +227,13 @@ def host_timezone() -> str:
     return target.split("zoneinfo/", 1)[1] if "zoneinfo/" in target else ""
 
 
-def run(packages: list[str] | None = None, project: str | None = None) -> None:
+def run(packages: list[str] | None = None, project: str | None = None,
+        leave_running: bool = False) -> None:
     """Create and provision the machine.
 
     packages are a project's extra ones; project is its directory, if it has
-    a mise config to install the tools of.
+    a mise config to install the tools of. A machine this had to start is
+    stopped at the end, unless leave_running or a session is in it by then.
     """
     state = settings.GUEST_CLAUDE_STATE
 
@@ -239,7 +242,7 @@ def run(packages: list[str] | None = None, project: str | None = None) -> None:
     os.chmod(settings.CLAUDE_STATE, 0o700)   # holds Claude's login credentials
 
     # --- create / start ------------------------------------------------------
-    machine.ensure(os.path.realpath(settings.CLAUDE_STATE), state)
+    booted = machine.ensure(os.path.realpath(settings.CLAUDE_STATE), state)
 
     # --- packages ------------------------------------------------------------
     print("Updating the guest: packages, uv and Claude Code...")
@@ -296,5 +299,15 @@ def run(packages: list[str] | None = None, project: str | None = None) -> None:
         print(f"Installing the tools listed in {project}'s mise config...")
         if not mise.install(project):
             die(f"could not install the tools listed in {project}'s mise config")
+
+    # Nothing was using a machine that had to be started, so nothing is left
+    # to need it, unless a session came along since. Left running it would
+    # hold its memory until some later session stopped it.
+    if booted and not leave_running:
+        with session.locked():
+            if machine.running() and not session.used():
+                note(f"stopping machine '{settings.VM}'...")
+                if not machine.stop():
+                    warn(f"could not stop machine '{settings.VM}'")
 
     print("Setup done. Run kelder from a project directory, or: kelder self -C DIR")

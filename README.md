@@ -80,14 +80,15 @@ own:
 - `self help`: show `kelder`'s own usage.
 - `self version`: show `kelder`'s version.
 - `self setup`: create and provision the machine; safe to re-run, it
-  updates packages, config and `testvm` on an existing machine.
+  updates packages, config and `testvm` on an existing machine. If it
+  had to start the machine, it stops it again when it is done.
 - `self smoketest`: test the host's QEMU, virtiofsd and ssh in a
   throwaway machine (see [Testing the host's QEMU](#testing-the-hosts-qemu)).
 - `self list`: list the machines, with whether each is running, the size
   of its disk on the host and the directories attached to it.
 - `self stop [NAME]`: stop the machine `NAME`, or the one this project
-  uses. For a machine left running by `self setup` or by a session that
-  crashed; it is refused while a session is using the machine.
+  uses. For a machine left running by a session that was killed, or one
+  that has hung; it is refused while a session is using the machine.
 - `self delete NAME`: stop the machine `NAME` and delete it, disk and
   all, after asking you to confirm. Claude's state is not in the machine,
   so nothing of that is lost. It is refused while a session is using the
@@ -265,9 +266,9 @@ attached directories and sessions go over ssh to a port on localhost.
   machine stops.
 - Each attached directory takes a PCIe port, and those are fixed when the
   machine starts. A session that boots the machine gets as many as it
-  attaches. One that finds it running with too few, as after `kelder self
-  setup`, restarts it first (`kelder: restarting machine ...`); that only
-  happens when no other session is in it.
+  attaches. One that finds it running with too few, as after a session
+  that was killed, restarts it first (`kelder: restarting machine ...`);
+  that only happens when no other session is in it.
 
 The machine's disk, ssh key and cloud-init seed are in
 `~/.local/share/kelder/machines/<name>`, and the image it was copied from

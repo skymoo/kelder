@@ -351,17 +351,19 @@ def create() -> None:
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-def ensure(state: str, guest_state: str) -> None:
+def ensure(state: str, guest_state: str) -> bool:
     """Create the machine if there is none and leave it running, with the
-    host directory state mounted at guest_state."""
+    host directory state mounted at guest_state. Returns True if this call
+    booted it, False if it was already running."""
     if exists():
         print(f"Machine '{settings.VM}' exists; reusing it.")
     else:
         print(f"Creating machine '{settings.VM}'...")
         create()
-    start()
+    booted = start()
     if not guest_ok("mountpoint", "-q", guest_state):
         die(f"state directory is not mounted at {guest_state}")
+    return booted
 
 
 def memory() -> int:

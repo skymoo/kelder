@@ -31,10 +31,15 @@ def exists() -> bool:
     return backend().exists()
 
 
-def ensure(state: str, guest_state: str) -> None:
+def ensure(state: str, guest_state: str) -> bool:
     """Create the machine if there is none and leave it running, with the
-    host directory state mounted at guest_state."""
-    backend().ensure(state, guest_state)
+    host directory state mounted at guest_state. Returns True if this call
+    booted it, False if it was already running."""
+    return backend().ensure(state, guest_state)
+
+
+def running() -> bool:
+    return backend().running()
 
 
 def start(directories: int = 0) -> bool:

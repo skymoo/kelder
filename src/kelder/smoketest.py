@@ -27,7 +27,7 @@ def run(args: list[str] | None = None) -> None:
         die(f"machine '{vm}' already exists; delete it first ({machine.delete_command()})")
     d = check_dir(".")
 
-    provision.run()
+    provision.run(leave_running=True)
     machine.start()
     if not machine.attach(d):
         die(f"could not attach {d}")
