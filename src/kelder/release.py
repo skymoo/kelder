@@ -16,7 +16,7 @@ import tempfile
 import urllib.request
 
 from . import smolvm
-from .smolvm import die
+from .settings import die
 
 URL = "https://github.com/smol-machines/smolvm/releases/download/v{version}/{name}"
 # smolvm's name for each machine type in its Linux tarballs.

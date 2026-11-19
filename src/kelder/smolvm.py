@@ -1,60 +1,27 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Adam Mercer
-"""Settings and the smolvm CLI.
+"""The smolvm CLI.
 
 Everything that depends on how the smolvm CLI behaves lives here. Lock files
 are never inherited by the processes started here: Python opens files
 close-on-exec.
 """
-import os
 import shlex
 import shutil
 import subprocess
 import sys
 import time
-from typing import Literal, NoReturn
 
-PROG = "kelder"
-HOME = os.path.expanduser("~")
+from . import settings
+from .settings import Capture, die, note
 
-# What run() does with the command's output; see its docstring.
-Capture = Literal["all", "out", "drop"] | None
-
-
-def env(name: str, default: str) -> str:
-    """An environment variable, with empty treated as unset."""
-    return os.environ.get(name) or default
-
-
-# The smolvm machine. `self smoketest` changes it to its throwaway machine.
-VM = env("VM", "kelder")
-# Claude's state (login, settings, history, memory) lives on the host so the
-# machine can be thrown away and rebuilt. It is mounted into the machine at
-# boot, and sessions point CLAUDE_CONFIG_DIR at it.
-CLAUDE_STATE = env(
-    "CLAUDE_STATE",
-    os.path.join(env("XDG_DATA_HOME", os.path.join(HOME, ".local/share")), "kelder/claude"),
-)
-# Overridable so the tests can run the guest side locally; nothing else should set it.
-GUEST_CLAUDE_STATE = env("GUEST_CLAUDE_STATE", "/var/lib/kelder")
 # The smolvm binary; the tests point it at tests/fake_smolvm.py.
-SMOLVM_BIN = env("SMOLVM_BIN", "smolvm")
-# DRY_RUN=1 prints every smolvm call and runs none.
-DRY_RUN = os.environ.get("DRY_RUN") == "1"
-
-
-def note(msg: str) -> None:
-    print(f"{PROG}: {msg}", file=sys.stderr)
-
-
-def die(msg: str) -> NoReturn:
-    note(msg)
-    sys.exit(1)
+SMOLVM_BIN = settings.env("SMOLVM_BIN", "smolvm")
 
 
 def require() -> None:
     """Fail unless the smolvm binary is on PATH."""
-    if not DRY_RUN and shutil.which(SMOLVM_BIN) is None:
+    if not settings.DRY_RUN and shutil.which(SMOLVM_BIN) is None:
         die(f"{SMOLVM_BIN} not found on PATH")
 
 
@@ -64,7 +31,7 @@ def run(*args: str, capture: Capture = None) -> tuple[int, str]:
     capture="all" collects stdout and stderr together, "out" collects stdout
     and leaves stderr on the terminal, "drop" discards stdout.
     """
-    if DRY_RUN:
+    if settings.DRY_RUN:
         print("+ smolvm " + shlex.join(args), file=sys.stderr)
         return 0, ""
     stdout = {None: None, "drop": subprocess.DEVNULL}.get(capture, subprocess.PIPE)
@@ -79,7 +46,7 @@ def guest(*cmd: str, capture: Capture = None) -> tuple[int, str]:
     # finished (src/cli/machine.rs at v1.35.3), so a long step looks hung.
     # Output that is collected here anyway is left as it was.
     stream = ["--stream"] if capture is None else []
-    return run("machine", "exec", "--name", VM, *stream, "--", *cmd, capture=capture)
+    return run("machine", "exec", "--name", settings.VM, *stream, "--", *cmd, capture=capture)
 
 
 def guest_ok(*cmd: str) -> bool:
@@ -91,11 +58,11 @@ def exists() -> bool:
     """True if the machine exists, running or not."""
     # `machine status` exits 0 for a running or stopped machine and fails for
     # an unknown one (checked against the smolvm v1.34.4 source).
-    return run("machine", "status", "--name", VM, capture="all")[0] == 0
+    return run("machine", "status", "--name", settings.VM, capture="all")[0] == 0
 
 
 def running() -> bool:
-    return "': running" in run("machine", "status", "--name", VM, capture="all")[1]
+    return "': running" in run("machine", "status", "--name", settings.VM, capture="all")[1]
 
 
 def start() -> bool:
@@ -105,21 +72,21 @@ def start() -> bool:
     """
     booted = not running()
     if booted:
-        note(f"starting machine '{VM}'...")
-    rc, out = run("machine", "start", "--name", VM, capture="all")
+        note(f"starting machine '{settings.VM}'...")
+    rc, out = run("machine", "start", "--name", settings.VM, capture="all")
     # Starting a running machine succeeds; a paused one fails. Accept a failure
     # as long as the machine answers, otherwise show smolvm's error.
     if rc != 0 and not guest_ok():
-        die(f"could not start machine '{VM}':\n{out}")
+        die(f"could not start machine '{settings.VM}':\n{out}")
     for _ in range(30):
         if guest_ok():
             return booted
         time.sleep(1)
-    die(f"machine '{VM}' started but did not answer exec within 30s")
+    die(f"machine '{settings.VM}' started but did not answer exec within 30s")
 
 
 def stop() -> bool:
-    return run("machine", "stop", "--name", VM, capture="drop")[0] == 0
+    return run("machine", "stop", "--name", settings.VM, capture="drop")[0] == 0
 
 
 # Host directories are attached to the running machine at the same path they
@@ -127,16 +94,16 @@ def stop() -> bool:
 # machine stops.
 
 def attached(d: str) -> bool:
-    rc, out = run("machine", "mount", "ls", "--name", VM, capture="out")
+    rc, out = run("machine", "mount", "ls", "--name", settings.VM, capture="out")
     return rc == 0 and f"{d} -> {d}" in out.splitlines()
 
 
 def attach(d: str) -> bool:
-    return run("machine", "mount", "add", "--name", VM, "-v", f"{d}:{d}", capture="drop")[0] == 0
+    return run("machine", "mount", "add", "--name", settings.VM, "-v", f"{d}:{d}", capture="drop")[0] == 0
 
 
 def detach(d: str) -> bool:
-    if run("machine", "mount", "rm", "--name", VM, "-t", d, capture="drop")[0] != 0:
+    if run("machine", "mount", "rm", "--name", settings.VM, "-t", d, capture="drop")[0] != 0:
         return False
     # smolvm leaves the mount point on the machine's disk, where its name would
     # tell later sessions about a project they were not given. Remove it and

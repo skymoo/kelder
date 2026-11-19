@@ -14,16 +14,16 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
 
-from . import smolvm
-from .smolvm import die, note
+from . import settings, smolvm
+from .settings import die, note
 
 BUSY = ("only one set of directories can be attached at a time "
         "(set vm in the project's .kelder.toml, or VM=<name>, for another machine)")
 
 
 def state_dir() -> Path:
-    base = smolvm.env("XDG_RUNTIME_DIR", os.path.join(smolvm.HOME, ".cache"))
-    return Path(base) / "kelder" / smolvm.VM
+    base = settings.env("XDG_RUNTIME_DIR", os.path.join(settings.HOME, ".cache"))
+    return Path(base) / "kelder" / settings.VM
 
 
 def _open(path: str | os.PathLike[str]) -> int:
@@ -125,8 +125,8 @@ class Session:
         try:
             self.sweep(only_free=True, fatal=False)
             if not any(self.state.glob("*.path")):
-                note(f"stopping machine '{smolvm.VM}'...")
+                note(f"stopping machine '{settings.VM}'...")
                 if not self.vm.stop():
-                    note(f"could not stop machine '{smolvm.VM}'")
+                    note(f"could not stop machine '{settings.VM}'")
         finally:
             fcntl.flock(self.glock, fcntl.LOCK_UN)

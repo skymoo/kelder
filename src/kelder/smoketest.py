@@ -19,16 +19,16 @@ import shlex
 import shutil
 import sys
 
-from . import provision, smolvm
+from . import provision, settings, smolvm
 from .cli import check_dir
-from .smolvm import die
+from .settings import die
 
 
 def run(args: list[str] | None = None) -> None:
     args = args or []
     if args and (len(args) != 2 or args[0] != "--release"):
         die("usage: kelder self smoketest [--release VERSION]")
-    smolvm.VM = vm = smolvm.env("VM", "kelder-test")
+    settings.VM = vm = settings.env("VM", "kelder-test")
     if vm == "kelder":
         die("refusing to test in the main machine 'kelder'")
     tmp = ""
@@ -36,7 +36,7 @@ def run(args: list[str] | None = None) -> None:
         from . import release
         tmp = release.use(args[1])
     smolvm.require()
-    if not smolvm.DRY_RUN and smolvm.exists():
+    if not settings.DRY_RUN and smolvm.exists():
         die(f"machine '{vm}' already exists; delete it first (smolvm machine delete --name {vm})")
     d = check_dir(".")
 
@@ -52,7 +52,7 @@ def run(args: list[str] | None = None) -> None:
 
     print()
     if smolvm.run("machine", "status", "--name", f"{vm}-nosuch", capture="all")[0] == 0 \
-            and not smolvm.DRY_RUN:
+            and not settings.DRY_RUN:
         print("FAIL     host: machine status succeeds for an unknown machine")
         fails = 1
     else:

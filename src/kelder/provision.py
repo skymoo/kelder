@@ -19,8 +19,9 @@ import sys
 import time
 from importlib.resources import files
 
-from . import mise, smolvm
-from .smolvm import die, guest, guest_ok, note
+from . import mise, settings, smolvm
+from .settings import die, note
+from .smolvm import guest, guest_ok
 
 PACKAGES = [
     # base
@@ -173,7 +174,7 @@ def update_if_stale() -> None:
     Called when a session boots the machine. NO_UPDATE=1 skips it; a failed
     update is reported and the session goes ahead.
     """
-    if os.environ.get("NO_UPDATE") == "1" or smolvm.DRY_RUN:
+    if os.environ.get("NO_UPDATE") == "1" or settings.DRY_RUN:
         return
     stamp = guest("bash", "-c", READ_STAMP, "_", STAMP, capture="out")[1].strip()
     if stamp.isdigit():
@@ -183,7 +184,7 @@ def update_if_stale() -> None:
         when = f"last updated {days} days ago"
     else:
         when = "no record of an update"
-    note(f"updating machine '{smolvm.VM}' ({when})...")
+    note(f"updating machine '{settings.VM}' ({when})...")
     rc, out = update_guest(quiet=True)
     if rc != 0:
         tail = "\n".join(out.splitlines()[-15:])
@@ -230,15 +231,15 @@ def run(packages: list[str] | None = None, project: str | None = None) -> None:
     packages are a project's extra ones; project is its directory, if it has
     a mise config to install the tools of.
     """
-    vm = smolvm.VM
-    state = smolvm.GUEST_CLAUDE_STATE
+    vm = settings.VM
+    state = settings.GUEST_CLAUDE_STATE
     image_set = "IMAGE" in os.environ
-    image = smolvm.env("IMAGE", "debian")
+    image = settings.env("IMAGE", "debian")
 
     host_checks()
-    os.makedirs(smolvm.CLAUDE_STATE, exist_ok=True)
-    os.chmod(smolvm.CLAUDE_STATE, 0o700)   # holds Claude's login credentials
-    state_mount = f"{os.path.realpath(smolvm.CLAUDE_STATE)}:{state}"
+    os.makedirs(settings.CLAUDE_STATE, exist_ok=True)
+    os.chmod(settings.CLAUDE_STATE, 0o700)   # holds Claude's login credentials
+    state_mount = f"{os.path.realpath(settings.CLAUDE_STATE)}:{state}"
 
     # --- create / start ------------------------------------------------------
     if smolvm.exists():
@@ -265,7 +266,7 @@ def run(packages: list[str] | None = None, project: str | None = None) -> None:
 
     # Machines made by older versions mount a project at /work on every boot,
     # which Claude would see alongside whatever kelder attaches.
-    if guest_ok("mountpoint", "-q", "/work") and not smolvm.DRY_RUN:
+    if guest_ok("mountpoint", "-q", "/work") and not settings.DRY_RUN:
         warn(f"machine '{vm}' still mounts a directory at /work. Remove it with:")
         print(f"  smolvm machine update --name {vm} --remove-volume <host-dir>:/work"
               "   (then restart the machine)", file=sys.stderr)
@@ -313,7 +314,7 @@ def run(packages: list[str] | None = None, project: str | None = None) -> None:
     # A paused VM (-S) stays up until timeout kills it (124); a KVM error exits sooner.
     rc = guest("timeout", "3", "qemu-system-x86_64", "-accel", "kvm", "-display", "none",
                "-nodefaults", "-S", capture="all")[0]
-    if rc != 124 and not smolvm.DRY_RUN:
+    if rc != 124 and not settings.DRY_RUN:
         die(f"QEMU could not start a KVM guest (exit {rc}); check nested virtualization")
     if guest("podman", "info", capture="drop")[0] != 0:
         die("podman is installed but not working")

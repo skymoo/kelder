@@ -13,7 +13,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from kelder import mise, provision, release, smoketest, smolvm
+from kelder import mise, provision, release, settings, smoketest, smolvm
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -27,9 +27,9 @@ class Provision(unittest.TestCase):
         self.trace = self.tmp / "trace"
         for patch in (
             mock.patch.multiple(
-                smolvm, VM="fake", HOME=str(self.tmp / "home"), DRY_RUN=False,
-                SMOLVM_BIN=str(ROOT / "tests/fake_smolvm.py"),
+                settings, VM="fake", HOME=str(self.tmp / "home"), DRY_RUN=False,
                 CLAUDE_STATE=str(self.tmp / "state"), GUEST_CLAUDE_STATE="/var/lib/kelder"),
+            mock.patch.object(smolvm, "SMOLVM_BIN", str(ROOT / "tests/fake_smolvm.py")),
             mock.patch.dict(os.environ, {"SMOLVM_TRACE": str(self.trace),
                                          "FAKE_SMOLVM_NOEXEC": "1", "FAKE_SMOLVM_FRESH": "1",
                                          "XDG_RUNTIME_DIR": str(self.tmp)}),
@@ -134,7 +134,7 @@ class Provision(unittest.TestCase):
     def test_smoketest_uses_a_throwaway_machine_and_deletes_it(self):
         with _chdir(self.tmp / "home/proj"):
             out = self.run_quietly(smoketest.run)
-        self.assertEqual(smolvm.VM, "kelder-test")
+        self.assertEqual(settings.VM, "kelder-test")
         self.assertIn(["machine", "mount", "add", "--name", "kelder-test", "-v",
                        f"{self.tmp}/home/proj:{self.tmp}/home/proj"], self.calls())
         self.assertIn(["bash", "-lc", 'smoketest "$1"', "_", f"{self.tmp}/home/proj"],
@@ -153,7 +153,7 @@ class UpdateIfStale(unittest.TestCase):
         self.uv_rc = 0
         self.ran = []          # the update steps the guest was asked to run
         for patch in (
-            mock.patch.multiple(smolvm, VM="fake", DRY_RUN=False),
+            mock.patch.multiple(settings, VM="fake", DRY_RUN=False),
             mock.patch.object(provision, "guest", side_effect=self.guest),
             mock.patch.dict(os.environ),
         ):
@@ -217,7 +217,7 @@ class UpdateIfStale(unittest.TestCase):
     def test_no_update_and_dry_run_skip_it(self):
         with mock.patch.dict(os.environ, {"NO_UPDATE": "1"}):
             self.assertEqual(self.run_it(), "")
-        with mock.patch.object(smolvm, "DRY_RUN", True):
+        with mock.patch.object(settings, "DRY_RUN", True):
             self.assertEqual(self.run_it(), "")
         self.assertEqual(self.ran, [])
 

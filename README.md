@@ -21,7 +21,8 @@ installing.
 src/kelder/cli.py          the kelder command: arguments, running claude in the guest
 src/kelder/session.py      which directories are attached, and by which sessions
 src/kelder/config.py       a project's .kelder.toml, and the user's config.toml
-src/kelder/smolvm.py       settings and every smolvm CLI assumption
+src/kelder/settings.py     settings shared by every module
+src/kelder/smolvm.py       every smolvm CLI assumption
 src/kelder/provision.py    create and provision the guest (kelder self setup)
 src/kelder/smoketest.py    test a smolvm upgrade (kelder self smoketest)
 src/kelder/release.py      fetch a smolvm release to test before upgrading

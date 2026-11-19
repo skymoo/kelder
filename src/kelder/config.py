@@ -27,8 +27,8 @@ import re
 import tomllib
 from dataclasses import dataclass, field
 
-from . import smolvm
-from .smolvm import die
+from . import settings
+from .settings import die
 
 NAME = ".kelder.toml"
 KEYS = {"vm", "packages", "memory"}
@@ -56,7 +56,7 @@ class Config:
 
 def user_file() -> str:
     """The user's own file, for projects that have no .kelder.toml."""
-    base = smolvm.env("XDG_CONFIG_HOME", os.path.join(smolvm.HOME, ".config"))
+    base = settings.env("XDG_CONFIG_HOME", os.path.join(settings.HOME, ".config"))
     return os.path.join(base, "kelder/config.toml")
 
 

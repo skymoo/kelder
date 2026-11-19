@@ -10,7 +10,7 @@ import time
 import unittest
 from unittest import mock
 
-from kelder import cli, smolvm
+from kelder import cli, settings
 
 
 def dies(test, fn, *args):
@@ -70,7 +70,7 @@ class CheckDir(unittest.TestCase):
         self.tmp = os.path.realpath(tmp.name)
         for d in ("home/proj", "state/sub", "with:colon"):
             os.makedirs(os.path.join(self.tmp, d))
-        patch = mock.patch.multiple(smolvm, HOME=self.path("home"), CLAUDE_STATE=self.path("state"))
+        patch = mock.patch.multiple(settings, HOME=self.path("home"), CLAUDE_STATE=self.path("state"))
         patch.start()
         self.addCleanup(patch.stop)
 
@@ -102,7 +102,7 @@ class ResumeCommand(unittest.TestCase):
         os.makedirs(self.proj)
         self.folder = os.path.join(self.tmp, "state/projects", re.sub(r"[^A-Za-z0-9]", "-", self.proj))
         os.makedirs(self.folder)
-        patch = mock.patch.multiple(smolvm, VM="kelder", CLAUDE_STATE=os.path.join(self.tmp, "state"))
+        patch = mock.patch.multiple(settings, VM="kelder", CLAUDE_STATE=os.path.join(self.tmp, "state"))
         patch.start()
         self.addCleanup(patch.stop)
         old = os.getcwd()
@@ -129,13 +129,13 @@ class ResumeCommand(unittest.TestCase):
     def test_other_machine_and_directories(self):
         self.transcript("abc", age=1)
         os.chdir(self.tmp)
-        with mock.patch.object(smolvm, "VM", "kelder-test"):
+        with mock.patch.object(settings, "VM", "kelder-test"):
             self.assertEqual(cli.resume_command([self.proj, "/x y"], self.now - 10),
                              f"VM=kelder-test kelder self -C {self.proj} -a '/x y' -- --resume abc")
 
     def test_machine_from_the_project_file_needs_no_prefix(self):
         self.transcript("abc", age=1)
-        with mock.patch.object(smolvm, "VM", "homelab"):
+        with mock.patch.object(settings, "VM", "homelab"):
             self.assertEqual(cli.resume_command([self.proj], self.now - 10, "homelab"),
                              "kelder --resume abc")
             self.assertEqual(cli.resume_command([self.proj], self.now - 10, "other"),

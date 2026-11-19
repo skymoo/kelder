@@ -24,9 +24,9 @@ from pathlib import Path
 from types import FrameType
 from typing import NoReturn
 
-from . import config, mise, smolvm
+from . import config, mise, settings, smolvm
 from .session import Session
-from .smolvm import die, note
+from .settings import die, note
 
 USAGE = """\
 Usage: kelder [--] [CLAUDE_ARGS...]
@@ -187,11 +187,11 @@ def check_dir(path: str) -> str:
     if not os.path.isdir(path):
         die(f"not a directory: {path}")
     d = os.path.realpath(path)
-    if d in ("/", os.path.realpath(smolvm.HOME)):
+    if d in ("/", os.path.realpath(settings.HOME)):
         die(f"won't attach {d}; run kelder from a project directory")
     if ":" in d:
         die("can't attach a path containing ':'")
-    state = os.path.realpath(smolvm.CLAUDE_STATE)
+    state = os.path.realpath(settings.CLAUDE_STATE)
     if (d + "/").startswith(state + "/") or (state + "/").startswith(d + "/"):
         die(f"won't attach {d}: it overlaps Claude's state directory {state}")
     return d
@@ -205,7 +205,7 @@ def resume_command(dirs: list[str], since: float, default_vm: str = "kelder") ->
     in the state directory's folder for the primary directory. default_vm is
     the machine the primary directory gets when VM isn't set.
     """
-    projects = Path(smolvm.CLAUDE_STATE) / "projects"
+    projects = Path(settings.CLAUDE_STATE) / "projects"
     # Claude names the folder after the directory with other characters
     # replaced by "-"; try that and the "/"-only form, whichever exists.
     folders = {re.sub(r"[^A-Za-z0-9]", "-", dirs[0]), dirs[0].replace("/", "-")}
@@ -226,7 +226,7 @@ def resume_command(dirs: list[str], since: float, default_vm: str = "kelder") ->
     for d in dirs[1:]:
         options += ["-a", d]
     command = ["kelder", *(["self", *options, "--"] if options else []), "--resume", newest[1]]
-    prefix = f"VM={shlex.quote(smolvm.VM)} " if smolvm.VM != default_vm else ""
+    prefix = f"VM={shlex.quote(settings.VM)} " if settings.VM != default_vm else ""
     return prefix + shlex.join(command)
 
 
@@ -240,15 +240,15 @@ def note_missing(cfg: config.Config, project: str) -> None:
     if cfg.packages:
         missing = smolvm.guest("bash", "-c", MISSING_PACKAGES, "_", *cfg.packages, capture="out")[1].split()
         if missing:
-            note(f"machine '{smolvm.VM}' lacks packages listed in {cfg.path}: {' '.join(missing)}; "
+            note(f"machine '{settings.VM}' lacks packages listed in {cfg.path}: {' '.join(missing)}; "
                  "run 'kelder self setup' to install them")
     if mise.configured(project):
         tools = mise.missing(project)
         if tools is None:
-            note(f"machine '{smolvm.VM}' lacks mise, which installs the tools listed in {project}'s "
+            note(f"machine '{settings.VM}' lacks mise, which installs the tools listed in {project}'s "
                  "mise config; run 'kelder self setup' to install it")
         elif tools:
-            note(f"machine '{smolvm.VM}' lacks tools listed in {project}'s mise config: "
+            note(f"machine '{settings.VM}' lacks tools listed in {project}'s mise config: "
                  f"{' '.join(tools)}; run 'kelder self setup' to install them")
 
 
@@ -272,7 +272,7 @@ def run_claude(primary: str, extra: list[str], claude_args: list[str],
         # Claude files memory under the project's path unless told otherwise.
         # The folder is named by its path in the guest; the "=" form keeps a
         # following prompt from being read as the option's value.
-        folder = f"{smolvm.GUEST_CLAUDE_STATE}/memory/{cfg.memory}"
+        folder = f"{settings.GUEST_CLAUDE_STATE}/memory/{cfg.memory}"
         claude_args = [f"--settings={json.dumps({'autoMemoryDirectory': folder})}", *claude_args]
     dirs = [check_dir(primary)]
     for d in extra:
@@ -281,7 +281,7 @@ def run_claude(primary: str, extra: list[str], claude_args: list[str],
             dirs.append(d)
 
     if not smolvm.exists():
-        die(f"machine '{smolvm.VM}' does not exist; run 'kelder self setup' first")
+        die(f"machine '{settings.VM}' does not exist; run 'kelder self setup' first")
 
     from . import provision
     session = Session(dirs, on_boot=provision.update_if_stale)
@@ -298,10 +298,10 @@ def run_claude(primary: str, extra: list[str], claude_args: list[str],
         if sys.stdin.isatty() and sys.stdout.isatty():
             flags.append("-t")
         script = GUEST_ENV + mise.GUEST_ENV + (GUEST_SHELL if shell else GUEST_CLAUDE)
-        cmd = ["machine", "exec", "--name", smolvm.VM, *flags, "--", "bash", "-c", script, "_",
-               dirs[0], smolvm.GUEST_CLAUDE_STATE, f".venv-{smolvm.VM}",
+        cmd = ["machine", "exec", "--name", settings.VM, *flags, "--", "bash", "-c", script, "_",
+               dirs[0], settings.GUEST_CLAUDE_STATE, f".venv-{settings.VM}",
                str(len(dirs) - 1), *dirs[1:], *claude_args]
-        if smolvm.DRY_RUN:
+        if settings.DRY_RUN:
             return smolvm.run(*cmd)[0]
         started = time.time() - 2   # allow for coarse file timestamps
         rc = subprocess.call([smolvm.SMOLVM_BIN, *cmd])
@@ -329,12 +329,12 @@ def main(argv: list[str] | None = None) -> None:
     smolvm.require()
     # The project file names the machine unless VM does.
     cfg = config.load(primary)
-    if cfg.vm and not smolvm.env("VM", ""):
-        smolvm.VM = cfg.vm
+    if cfg.vm and not settings.env("VM", ""):
+        settings.VM = cfg.vm
     if command == "setup":
         from . import provision
         if cfg.path:
-            print(f"Using {cfg.path} for machine '{smolvm.VM}'.")
+            print(f"Using {cfg.path} for machine '{settings.VM}'.")
         provision.run(cfg.packages, check_dir(primary) if mise.configured(primary) else None)
     else:
         sys.exit(run_claude(primary, extra, rest, cfg, shell=command == "shell"))
