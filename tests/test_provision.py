@@ -135,6 +135,12 @@ class Provision(unittest.TestCase):
         self.assertIn("All checks passed", out)
         self.assertFalse(made.exists())
 
+    def test_smoketest_of_a_release_is_refused_for_a_qemu_machine(self):
+        with _chdir(self.tmp / "home/proj"), mock.patch.dict(os.environ, {"BACKEND": "qemu"}), \
+                mock.patch.object(release, "use") as use, self.assertRaises(SystemExit):
+            self.run_quietly(functools.partial(smoketest.run, ["--release", "1.2.3"]))
+        use.assert_not_called()
+
     def test_smoketest_uses_a_throwaway_machine_and_deletes_it(self):
         with _chdir(self.tmp / "home/proj"):
             out = self.run_quietly(smoketest.run)

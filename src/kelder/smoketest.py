@@ -1,12 +1,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Adam Mercer
-"""Test the installed smolvm, or a release of it, in a throwaway machine.
+"""Test the installed smolvm or QEMU, or a smolvm release, in a throwaway machine.
 
 Run it as `kelder self smoketest` from a project directory. It creates
 the machine, runs the guest's smoketest in it with the current directory
 attached, checks the smolvm CLI behaviour kelder relies on, and deletes
 the machine if everything passed. A machine that failed is kept for
-inspection.
+inspection. With BACKEND=qemu the machine is a QEMU one, which has no CLI
+to check.
 
 With `--release VERSION` it tests that smolvm release instead of the
 installed one: the release is downloaded to a temporary directory, which
@@ -33,6 +34,8 @@ def run(args: list[str] | None = None) -> None:
         die("refusing to test in the main machine 'kelder'")
     tmp = ""
     if args:
+        if machine.backend() is not smolvm:
+            die("--release tests a smolvm release; it cannot be used with a QEMU machine")
         from . import release
         tmp = release.use(args[1])
     machine.require()
