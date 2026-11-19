@@ -19,7 +19,7 @@ import shlex
 import shutil
 import sys
 
-from . import provision, settings, smolvm
+from . import machine, provision, settings, smolvm
 from .cli import check_dir
 from .settings import die
 
@@ -35,43 +35,33 @@ def run(args: list[str] | None = None) -> None:
     if args:
         from . import release
         tmp = release.use(args[1])
-    smolvm.require()
-    if not settings.DRY_RUN and smolvm.exists():
-        die(f"machine '{vm}' already exists; delete it first (smolvm machine delete --name {vm})")
+    machine.require()
+    if not settings.DRY_RUN and machine.exists():
+        die(f"machine '{vm}' already exists; delete it first ({machine.delete_command()})")
     d = check_dir(".")
 
     provision.run()
-    smolvm.start()
-    if not smolvm.attach(d):
+    machine.start()
+    if not machine.attach(d):
         die(f"could not attach {d}")
 
     fails = 0
     print(f"Running smoketest in '{vm}' (output appears when it finishes)...")
-    if smolvm.guest("bash", "-lc", 'smoketest "$1"', "_", d)[0] != 0:
+    if machine.guest("bash", "-lc", 'smoketest "$1"', "_", d)[0] != 0:
         fails = 1
 
     print()
-    if smolvm.run("machine", "status", "--name", f"{vm}-nosuch", capture="all")[0] == 0 \
-            and not settings.DRY_RUN:
-        print("FAIL     host: machine status succeeds for an unknown machine")
-        fails = 1
-    else:
-        print("PASS     host: machine status fails for an unknown machine")
-    if smolvm.run("machine", "start", "--name", vm, capture="all")[0] == 0:
-        print("PASS     host: machine start succeeds on a running machine")
-    else:
-        print("FAIL     host: machine start fails on a running machine")
-        fails = 1
+    fails += machine.smoketest_host()
 
     print()
     if fails:
-        delete = f"smolvm machine delete --name {vm}"
+        delete = machine.delete_command()
         if tmp:
             delete = (f"SMOLVM_DATA_DIR={shlex.quote(tmp)}/data {shlex.quote(smolvm.SMOLVM_BIN)}"
                       f" machine delete --name {vm} -f && rm -rf {shlex.quote(tmp)}")
         print(f"Kept machine '{vm}' for inspection; remove it with: {delete}", file=sys.stderr)
         sys.exit(1)
-    if smolvm.run("machine", "delete", "--name", vm, "-f")[0] != 0:
+    if not machine.delete():
         die(f"could not delete machine '{vm}'")
     if tmp:
         shutil.rmtree(tmp)

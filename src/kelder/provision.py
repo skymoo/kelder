@@ -15,13 +15,12 @@ tools that lists (see mise.py).
 import base64
 import os
 import subprocess
-import sys
 import time
 from importlib.resources import files
 
-from . import mise, settings, smolvm
-from .settings import die, note
-from .smolvm import guest, guest_ok
+from . import machine, mise, settings
+from .machine import guest, guest_ok
+from .settings import die, note, warn
 
 PACKAGES = [
     # base
@@ -51,9 +50,9 @@ PACKAGES = [
     "qemu-utils",
 ]
 
-# Files from this package's guest/ directory, with where they go in the guest.
+# Files from this package's guest/ directory, with where they go in the guest;
+# machine.guest_files() adds the backend's own.
 GUEST_FILES = [
-    ("containers-tsi.conf", "/etc/containers/containers.conf.d/50-smolvm-tsi.conf", "644"),
     ("testvm", "/usr/local/bin/testvm", "755"),
     ("smoketest", "/usr/local/bin/smoketest", "755"),
 ]
@@ -136,10 +135,6 @@ chmod 700 "$state"   # cp -a copied the source directory's mode onto it
 """
 
 
-def warn(msg: str) -> None:
-    print(f"warning: {msg}", file=sys.stderr)
-
-
 def asroot() -> list[str]:
     """The prefix that makes a guest command run as root."""
     return [] if guest("id", "-u", capture="out")[1].strip() == "0" else ["sudo"]
@@ -203,8 +198,7 @@ def host_checks() -> None:
             pass
     if "Y" not in nested and "1" not in nested:
         warn("nested virtualization looks disabled on the host; VMs inside the guest won't get KVM")
-    if smolvm.run("machine", "mount", "--help", capture="all")[0] != 0:
-        die("smolvm 1.32 or newer is needed (kelder uses 'smolvm machine mount')")
+    machine.host_checks()
 
 
 def host_timezone() -> str:
@@ -231,45 +225,14 @@ def run(packages: list[str] | None = None, project: str | None = None) -> None:
     packages are a project's extra ones; project is its directory, if it has
     a mise config to install the tools of.
     """
-    vm = settings.VM
     state = settings.GUEST_CLAUDE_STATE
-    image_set = "IMAGE" in os.environ
-    image = settings.env("IMAGE", "debian")
 
     host_checks()
     os.makedirs(settings.CLAUDE_STATE, exist_ok=True)
     os.chmod(settings.CLAUDE_STATE, 0o700)   # holds Claude's login credentials
-    state_mount = f"{os.path.realpath(settings.CLAUDE_STATE)}:{state}"
 
     # --- create / start ------------------------------------------------------
-    if smolvm.exists():
-        print(f"Machine '{vm}' exists; reusing it.")
-        if image_set:
-            warn("IMAGE is ignored for an existing machine; delete it and re-run to change images")
-    elif smolvm.run("machine", "create", "--name", vm, "--nested", "--net",
-                    "--image", image, "-v", state_mount)[0] != 0:
-        die(f"could not create machine '{vm}'")
-    smolvm.start()
-
-    # Machines made before the state mount existed get it added. Mounts can only
-    # change while the machine is stopped, so this restarts it once.
-    if not guest_ok("mountpoint", "-q", state):
-        print(f"Adding the Claude state mount; restarting machine '{vm}' "
-              "(this ends any kelder sessions in it)...")
-        if smolvm.run("machine", "stop", "--name", vm)[0] != 0:
-            die(f"could not stop machine '{vm}'")
-        if smolvm.run("machine", "update", "--name", vm, "-v", state_mount)[0] != 0:
-            die(f"could not add the state mount to machine '{vm}'")
-        smolvm.start()
-        if not guest_ok("mountpoint", "-q", state):
-            die(f"state directory still not mounted at {state} after restart")
-
-    # Machines made by older versions mount a project at /work on every boot,
-    # which Claude would see alongside whatever kelder attaches.
-    if guest_ok("mountpoint", "-q", "/work") and not settings.DRY_RUN:
-        warn(f"machine '{vm}' still mounts a directory at /work. Remove it with:")
-        print(f"  smolvm machine update --name {vm} --remove-volume <host-dir>:/work"
-              "   (then restart the machine)", file=sys.stderr)
+    machine.ensure(os.path.realpath(settings.CLAUDE_STATE), state)
 
     # --- packages ------------------------------------------------------------
     print("Updating the guest: packages, uv and Claude Code...")
@@ -280,7 +243,7 @@ def run(packages: list[str] | None = None, project: str | None = None) -> None:
     root = asroot()
 
     # --- guest config --------------------------------------------------------
-    for name, dest, mode in GUEST_FILES:
+    for name, dest, mode in [*machine.guest_files(), *GUEST_FILES]:
         data = files("kelder").joinpath("guest", name).read_bytes()
         if guest(*root, "bash", "-c", WRITE_FILE, "_",
                  base64.b64encode(data).decode(), dest, mode)[0] != 0:

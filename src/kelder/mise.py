@@ -13,7 +13,7 @@ which of the project's tools the machine lacks.
 """
 import os
 
-from . import smolvm
+from . import machine
 from .session import Session
 
 # What makes a directory a mise project (mise's "Configuration" page).
@@ -63,7 +63,7 @@ def install(project: str) -> bool:
     session = Session([project])
     session.attach()
     try:
-        return smolvm.guest("bash", "-c", INSTALL, "_", project)[0] == 0
+        return machine.guest("bash", "-c", INSTALL, "_", project)[0] == 0
     finally:
         session.cleanup()
 
@@ -71,7 +71,7 @@ def install(project: str) -> bool:
 def missing(project: str) -> list[str] | None:
     """The tools (name@version) the attached project asks for and the guest
     lacks; None if the guest has no mise."""
-    rc, out = smolvm.guest("bash", "-c", MISSING, "_", project, capture="out")
+    rc, out = machine.guest("bash", "-c", MISSING, "_", project, capture="out")
     if rc == 127:
         return None
     return ["@".join(fields[:2]) for fields in map(str.split, out.splitlines()) if len(fields) > 1]

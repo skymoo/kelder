@@ -6,6 +6,7 @@ Everything that depends on how the smolvm CLI behaves lives here. Lock files
 are never inherited by the processes started here: Python opens files
 close-on-exec.
 """
+import os
 import shlex
 import shutil
 import subprocess
@@ -13,7 +14,7 @@ import sys
 import time
 
 from . import settings
-from .settings import Capture, die, note
+from .settings import Capture, die, note, warn
 
 # The smolvm binary; the tests point it at tests/fake_smolvm.py.
 SMOLVM_BIN = settings.env("SMOLVM_BIN", "smolvm")
@@ -40,6 +41,11 @@ def run(*args: str, capture: Capture = None) -> tuple[int, str]:
     return p.returncode, p.stdout or ""
 
 
+def host_checks() -> None:
+    if run("machine", "mount", "--help", capture="all")[0] != 0:
+        die("smolvm 1.32 or newer is needed (kelder uses 'smolvm machine mount')")
+
+
 def guest(*cmd: str, capture: Capture = None) -> tuple[int, str]:
     """Run a command in the guest without a TTY; returns (exit status, output)."""
     # Without --stream, smolvm prints a command's output only once it has
@@ -59,6 +65,44 @@ def exists() -> bool:
     # `machine status` exits 0 for a running or stopped machine and fails for
     # an unknown one (checked against the smolvm v1.34.4 source).
     return run("machine", "status", "--name", settings.VM, capture="all")[0] == 0
+
+
+def ensure(state: str, guest_state: str) -> None:
+    """Create the machine if there is none and leave it running, with the
+    host directory state mounted at guest_state.
+
+    IMAGE names the image for a new machine (default: debian).
+    """
+    vm = settings.VM
+    state_mount = f"{state}:{guest_state}"
+    if exists():
+        print(f"Machine '{vm}' exists; reusing it.")
+        if "IMAGE" in os.environ:
+            warn("IMAGE is ignored for an existing machine; delete it and re-run to change images")
+    elif run("machine", "create", "--name", vm, "--nested", "--net",
+             "--image", settings.env("IMAGE", "debian"), "-v", state_mount)[0] != 0:
+        die(f"could not create machine '{vm}'")
+    start()
+
+    # Machines made before the state mount existed get it added. Mounts can only
+    # change while the machine is stopped, so this restarts it once.
+    if not guest_ok("mountpoint", "-q", guest_state):
+        print(f"Adding the Claude state mount; restarting machine '{vm}' "
+              "(this ends any kelder sessions in it)...")
+        if run("machine", "stop", "--name", vm)[0] != 0:
+            die(f"could not stop machine '{vm}'")
+        if run("machine", "update", "--name", vm, "-v", state_mount)[0] != 0:
+            die(f"could not add the state mount to machine '{vm}'")
+        start()
+        if not guest_ok("mountpoint", "-q", guest_state):
+            die(f"state directory still not mounted at {guest_state} after restart")
+
+    # Machines made by older versions mount a project at /work on every boot,
+    # which Claude would see alongside whatever kelder attaches.
+    if guest_ok("mountpoint", "-q", "/work") and not settings.DRY_RUN:
+        warn(f"machine '{vm}' still mounts a directory at /work. Remove it with:")
+        print(f"  smolvm machine update --name {vm} --remove-volume <host-dir>:/work"
+              "   (then restart the machine)", file=sys.stderr)
 
 
 def running() -> bool:
@@ -87,6 +131,47 @@ def start() -> bool:
 
 def stop() -> bool:
     return run("machine", "stop", "--name", settings.VM, capture="drop")[0] == 0
+
+
+def delete() -> bool:
+    """Delete the machine, running or not."""
+    return run("machine", "delete", "--name", settings.VM, "-f")[0] == 0
+
+
+def delete_command() -> str:
+    """The command that deletes the machine, to show the user."""
+    return f"smolvm machine delete --name {settings.VM}"
+
+
+def session(tty: bool, cmd: list[str]) -> int:
+    """Run a command in the guest on this terminal; returns its exit status."""
+    args = ["machine", "exec", "--name", settings.VM, "-i", *(["-t"] if tty else []), "--", *cmd]
+    if settings.DRY_RUN:
+        return run(*args)[0]
+    return subprocess.call([SMOLVM_BIN, *args])
+
+
+def guest_files() -> list[tuple[str, str, str]]:
+    """Files from guest/ only smolvm machines need: (name, path in the guest, mode)."""
+    return [("containers-tsi.conf", "/etc/containers/containers.conf.d/50-smolvm-tsi.conf", "644")]
+
+
+def smoketest_host() -> int:
+    """Check the CLI behaviour kelder relies on; prints a line for each
+    check and returns how many failed."""
+    fails = 0
+    if run("machine", "status", "--name", f"{settings.VM}-nosuch", capture="all")[0] == 0 \
+            and not settings.DRY_RUN:
+        print("FAIL     host: machine status succeeds for an unknown machine")
+        fails += 1
+    else:
+        print("PASS     host: machine status fails for an unknown machine")
+    if run("machine", "start", "--name", settings.VM, capture="all")[0] == 0:
+        print("PASS     host: machine start succeeds on a running machine")
+    else:
+        print("FAIL     host: machine start fails on a running machine")
+        fails += 1
+    return fails
 
 
 # Host directories are attached to the running machine at the same path they

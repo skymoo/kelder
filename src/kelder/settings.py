@@ -36,6 +36,10 @@ def note(msg: str) -> None:
     print(f"{PROG}: {msg}", file=sys.stderr)
 
 
+def warn(msg: str) -> None:
+    print(f"warning: {msg}", file=sys.stderr)
+
+
 def die(msg: str) -> NoReturn:
     note(msg)
     sys.exit(1)

@@ -14,7 +14,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
 
-from . import settings, smolvm
+from . import machine, settings
 from .settings import die, note
 
 BUSY = ("only one set of directories can be attached at a time "
@@ -31,7 +31,7 @@ def _open(path: str | os.PathLike[str]) -> int:
 
 
 class Machine(Protocol):
-    """What a Session needs from the machine: the smolvm module, or a stand-in."""
+    """What a Session needs from the machine: the machine module, or a stand-in."""
 
     def start(self) -> bool: ...
     def stop(self) -> bool: ...
@@ -43,13 +43,13 @@ class Machine(Protocol):
 class Session:
     """One kelder run: dirs is every directory it attaches, primary first.
 
-    vm is what attaches and detaches (the smolvm module; a stand-in in tests).
+    vm is what attaches and detaches (the machine module; a stand-in in tests).
     on_boot, if given, is called when this session is the one that boots the
     machine, before anything is attached and while other sessions wait.
     """
 
     def __init__(self, dirs: list[str], state: str | os.PathLike[str] | None = None,
-                 vm: Machine = smolvm, on_boot: Callable[[], None] | None = None) -> None:
+                 vm: Machine = machine, on_boot: Callable[[], None] | None = None) -> None:
         self.dirs = dirs
         self.vm = vm
         self.on_boot = on_boot

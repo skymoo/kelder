@@ -17,14 +17,13 @@ import os
 import re
 import shlex
 import signal
-import subprocess
 import sys
 import time
 from pathlib import Path
 from types import FrameType
 from typing import NoReturn
 
-from . import config, mise, settings, smolvm
+from . import config, machine, mise, settings
 from .session import Session
 from .settings import die, note
 
@@ -238,7 +237,7 @@ def _terminate(signum: int, _frame: FrameType | None) -> NoReturn:
 def note_missing(cfg: config.Config, project: str) -> None:
     """Say which of the project's packages and mise tools the machine lacks; setup installs them."""
     if cfg.packages:
-        missing = smolvm.guest("bash", "-c", MISSING_PACKAGES, "_", *cfg.packages, capture="out")[1].split()
+        missing = machine.guest("bash", "-c", MISSING_PACKAGES, "_", *cfg.packages, capture="out")[1].split()
         if missing:
             note(f"machine '{settings.VM}' lacks packages listed in {cfg.path}: {' '.join(missing)}; "
                  "run 'kelder self setup' to install them")
@@ -280,7 +279,7 @@ def run_claude(primary: str, extra: list[str], claude_args: list[str],
         if d not in dirs:
             dirs.append(d)
 
-    if not smolvm.exists():
+    if not machine.exists():
         die(f"machine '{settings.VM}' does not exist; run 'kelder self setup' first")
 
     from . import provision
@@ -294,18 +293,15 @@ def run_claude(primary: str, extra: list[str], claude_args: list[str],
         if cfg.packages or mise.configured(dirs[0]):
             note_missing(cfg, dirs[0])
         # Only ask for a TTY when there is one, so `kelder -p ... | less` and scripts work.
-        flags = ["-i"]
-        if sys.stdin.isatty() and sys.stdout.isatty():
-            flags.append("-t")
+        tty = sys.stdin.isatty() and sys.stdout.isatty()
         script = GUEST_ENV + mise.GUEST_ENV + (GUEST_SHELL if shell else GUEST_CLAUDE)
-        cmd = ["machine", "exec", "--name", settings.VM, *flags, "--", "bash", "-c", script, "_",
-               dirs[0], settings.GUEST_CLAUDE_STATE, f".venv-{settings.VM}",
-               str(len(dirs) - 1), *dirs[1:], *claude_args]
+        cmd = ["bash", "-c", script, "_", dirs[0], settings.GUEST_CLAUDE_STATE,
+               f".venv-{settings.VM}", str(len(dirs) - 1), *dirs[1:], *claude_args]
         if settings.DRY_RUN:
-            return smolvm.run(*cmd)[0]
+            return machine.session(tty, cmd)
         started = time.time() - 2   # allow for coarse file timestamps
-        rc = subprocess.call([smolvm.SMOLVM_BIN, *cmd])
-        if "-t" in flags and not shell:
+        rc = machine.session(tty, cmd)
+        if tty and not shell:
             resume = resume_command(dirs, started, cfg.vm or "kelder")
             if resume:
                 note(f"resume with: {resume}")
@@ -326,7 +322,7 @@ def main(argv: list[str] | None = None) -> None:
         from . import smoketest
         smoketest.run(rest)
         return
-    smolvm.require()
+    machine.require()
     # The project file names the machine unless VM does.
     cfg = config.load(primary)
     if cfg.vm and not settings.env("VM", ""):
