@@ -29,6 +29,7 @@ src/kelder/machine.py      the machine, as the rest of kelder sees it
 src/kelder/qemu.py         the machine itself: QEMU, virtiofsd and ssh
 src/kelder/provision.py    create and provision the guest (kelder self setup)
 src/kelder/smoketest.py    test the host's QEMU (kelder self smoketest)
+src/kelder/machines.py     list, stop and delete machines (kelder self list, stop, delete)
 src/kelder/mise.py         tools a project lists in its mise.toml
 src/kelder/guest/          files setup copies into the guest:
   testvm                     throwaway QEMU/KVM VMs (/usr/local/bin)
@@ -49,9 +50,12 @@ kelder self shell                       # a shell in the guest instead of Claude
 kelder [--] [CLAUDE_ARGS...]
 kelder self [-C DIR] [-a DIR]... [--] [CLAUDE_ARGS...]
 kelder self shell [-C DIR] [-a DIR]...
+kelder self delete NAME
 kelder self help
+kelder self list
 kelder self setup
 kelder self smoketest
+kelder self stop [NAME]
 kelder self version
 ```
 
@@ -79,6 +83,15 @@ own:
   updates packages, config and `testvm` on an existing machine.
 - `self smoketest`: test the host's QEMU, virtiofsd and ssh in a
   throwaway machine (see [Testing the host's QEMU](#testing-the-hosts-qemu)).
+- `self list`: list the machines, with whether each is running, the size
+  of its disk on the host and the directories attached to it.
+- `self stop [NAME]`: stop the machine `NAME`, or the one this project
+  uses. For a machine left running by `self setup` or by a session that
+  crashed; it is refused while a session is using the machine.
+- `self delete NAME`: stop the machine `NAME` and delete it, disk and
+  all, after asking you to confirm. Claude's state is not in the machine,
+  so nothing of that is lost. It is refused while a session is using the
+  machine.
 
 Without `self`, every argument goes to `claude`. To give `claude` a
 prompt starting with "self", use `kelder -- self ...`.
@@ -260,8 +273,8 @@ The machine's disk, ssh key and cloud-init seed are in
 `~/.local/share/kelder/machines/<name>`, and the image it was copied from
 in `~/.cache/kelder/images`. While it runs, its console log and one log
 for each attached directory's virtiofsd are in
-`$XDG_RUNTIME_DIR/kelder/<name>/qemu`. To delete the machine, exit its
-sessions so it stops, then remove its directory under `machines`.
+`$XDG_RUNTIME_DIR/kelder/<name>/qemu`. `kelder self list` shows the
+machines there are, and `kelder self delete <name>` removes one.
 
 ## Testing the host's QEMU
 

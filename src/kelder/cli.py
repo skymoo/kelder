@@ -32,6 +32,8 @@ Usage: kelder [--] [CLAUDE_ARGS...]
        kelder self [-C DIR] [-a DIR]... [--] [CLAUDE_ARGS...]
        kelder self shell [-C DIR] [-a DIR]...
        kelder self COMMAND
+       kelder self delete NAME
+       kelder self stop [NAME]
 
 Run Claude Code in the guest with DIR (default: the current
 directory) attached at the same path it has on the host. Only arguments
@@ -43,12 +45,18 @@ Options (after self):
   --       end of kelder options; the rest goes to claude
 
 Commands (after self):
+  delete     stop and delete the machine NAME, after asking; refused
+             while a session is using it
   help       show this help
+  list       list the machines: running or stopped, the size of
+             their disks, the directories attached
   setup      create and provision the machine (safe to re-run)
   shell      open a shell in the guest instead of starting Claude,
              with the same directories and environment
   smoketest  test the host's QEMU, virtiofsd and ssh in a throwaway
              machine
+  stop       stop the machine NAME, or this project's; refused while
+             a session is using it
   version    show kelder's version
 
 Every other argument is passed to claude unchanged; run
@@ -77,7 +85,7 @@ Environment:
                 them
 """
 
-COMMANDS = ("help", "setup", "smoketest", "version")
+COMMANDS = ("delete", "help", "list", "setup", "smoketest", "stop", "version")
 
 # What runs in the guest. It gets the primary directory, the state directory,
 # the name of uv's project environment, the number of extra directories, the
@@ -319,11 +327,16 @@ def main(argv: list[str] | None = None) -> None:
         from . import smoketest
         smoketest.run(rest)
         return
-    machine.require()
+    if command != "list":   # which only reads what is on disk
+        machine.require()
     # The project file names the machine unless VM does.
     cfg = config.load(primary)
     if cfg.vm and not settings.env("VM", ""):
         settings.VM = cfg.vm
+    if command in ("list", "stop", "delete"):
+        from . import machines
+        machines.run(command, rest)
+        return
     if command == "setup":
         from . import provision
         if cfg.path:

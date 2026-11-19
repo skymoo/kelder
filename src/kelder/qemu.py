@@ -232,6 +232,20 @@ def exists() -> bool:
     return (machine_dir() / "disk.qcow2").exists()
 
 
+def names() -> list[str]:
+    """Every machine there is."""
+    root = machine_dir().parent
+    return sorted(p.parent.name for p in root.glob("*/disk.qcow2")) if root.is_dir() else []
+
+
+def disk_usage() -> int:
+    """The bytes the machine's disk takes on the host."""
+    try:
+        return (machine_dir() / "disk.qcow2").stat().st_blocks * 512
+    except OSError:
+        return 0
+
+
 def qemu_pid() -> int | None:
     """The PID of the machine's QEMU process, or None if it isn't running."""
     try:
@@ -487,8 +501,7 @@ def delete() -> bool:
 
 def delete_command() -> str:
     """The command that deletes the machine, to show the user."""
-    return (f"kill $(cat {shlex.quote(str(run_dir() / 'qemu.pid'))}); "
-            f"rm -rf {shlex.quote(str(machine_dir()))}")
+    return f"kelder self delete {settings.VM}"
 
 
 # --- attached directories ----------------------------------------------------

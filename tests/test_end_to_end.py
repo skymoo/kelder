@@ -93,10 +93,11 @@ class EndToEnd(unittest.TestCase):
     def command(self, *args):
         return [sys.executable, "-m", "kelder", *args]
 
-    def run_sc(self, *args, cwd="proj", **env):
+    def run_sc(self, *args, cwd="proj", answer=None, **env):
+        """Run kelder; answer is what is typed at it, if anything."""
         p = subprocess.run(self.command(*args), cwd=self.tmp / cwd, env={**self.env, **env},
-                           check=False, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                           stderr=subprocess.STDOUT, text=True)
+                           check=False, input=answer, stdin=None if answer else subprocess.DEVNULL,
+                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         return p.returncode, p.stdout
 
     def calls(self, name=None):
@@ -319,6 +320,100 @@ class EndToEnd(unittest.TestCase):
         self.assertEqual(first.wait(timeout=20), 0)
         self.assertIn(["device_del", "dev1"], self.calls("qmp"))
         self.assertFalse(self.machine_running())
+
+    def test_list_shows_each_machine_and_what_a_session_has_attached(self):
+        self.make_machine("spare")
+        rc, out = self.run_sc("self", "list")
+        self.assertEqual(rc, 0, out)
+        self.assertEqual([line.split() for line in out.splitlines()], [
+            ["NAME", "STATE", "DISK", "ATTACHED"],
+            ["fake", "stopped", "0.0", "GiB", "-"],
+            ["spare", "stopped", "0.0", "GiB", "-"],
+        ])
+        self.assertEqual(self.calls(), [])   # it only reads what is on disk
+
+        release = self.tmp / "release"
+        first = self.hold_a_session(release)
+        rc, out = self.run_sc("self", "list")
+        self.assertIn(["fake", "running", "0.0", "GiB", f"{self.tmp}/proj"],
+                      [line.split() for line in out.splitlines()])
+        release.touch()
+        self.assertEqual(first.wait(timeout=20), 0)
+
+    def test_list_without_machines_says_how_to_make_one(self):
+        (self.tmp / "data/kelder/machines/fake/disk.qcow2").unlink()
+        rc, out = self.run_sc("self", "list")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("No machines; 'kelder self setup' creates one.", out)
+
+    def test_stop_and_delete_are_refused_while_a_session_uses_the_machine(self):
+        release = self.tmp / "release"
+        first = self.hold_a_session(release)
+        for command in (("self", "stop"), ("self", "stop", "fake"), ("self", "delete", "fake")):
+            rc, out = self.run_sc(*command, cwd="other")
+            self.assertEqual(rc, 1, out)
+            self.assertIn(f"machine 'fake' is in use: a session has {self.tmp}/proj attached", out)
+        self.assertTrue(self.machine_running())
+        self.assertTrue((self.tmp / "data/kelder/machines/fake").is_dir())
+        release.touch()
+        self.assertEqual(first.wait(timeout=20), 0)
+
+    def leave_the_machine_running(self):
+        """What a session that is killed leaves: the machine up, its directory attached."""
+        first = self.hold_a_session(self.tmp / "never")
+        first.kill()
+        first.wait(timeout=20)
+        (self.tmp / "never").touch()   # lets the orphaned fake claude finish
+        self.assertTrue(self.machine_running())
+
+    def test_stop_stops_a_machine_no_session_is_using(self):
+        self.leave_the_machine_running()
+        rc, out = self.run_sc("self", "stop")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("kelder: stopping machine 'fake'...", out)
+        self.assertEqual(self.calls()[-1], ["poweroff"])
+        self.assertFalse(self.machine_running())
+        rc, out = self.run_sc("self", "stop")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("Machine 'fake' is not running.", out)
+
+    def test_delete_asks_and_leaves_the_machine_without_a_yes(self):
+        self.leave_the_machine_running()
+        for answer in (None, "\n", "n\n", "maybe\n"):
+            rc, out = self.run_sc("self", "delete", "fake", cwd="other", answer=answer)
+            self.assertEqual(rc, 1, out)
+            self.assertIn("Delete machine 'fake' (running, 0.0 GiB on disk)? [y/N]", out)
+            self.assertIn("Machine 'fake' was not deleted.", out)
+        self.assertTrue(self.machine_running())
+        self.assertTrue((self.tmp / "data/kelder/machines/fake").is_dir())
+
+    def test_delete_stops_the_machine_and_removes_it(self):
+        self.leave_the_machine_running()
+        rc, out = self.run_sc("self", "delete", "fake", cwd="other", answer="y\n")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("Deleted machine 'fake'.", out)
+        self.assertFalse(self.machine_running())
+        self.assertFalse((self.tmp / "data/kelder/machines/fake").exists())
+        self.assertFalse((self.tmp / "run/kelder/fake").exists())
+        rc, out = self.run_sc("self", "list")
+        self.assertIn("No machines", out)
+
+    def test_stop_and_delete_want_a_machine_that_exists(self):
+        for command in (("self", "stop", "nosuch"), ("self", "delete", "nosuch")):
+            rc, out = self.run_sc(*command)
+            self.assertEqual(rc, 1, out)
+            self.assertIn("machine 'nosuch' does not exist; see 'kelder self list'", out)
+        for command, usage in ((("self", "delete"), "usage: kelder self delete NAME"),
+                               (("self", "delete", "a", "b"), "usage: kelder self delete NAME"),
+                               (("self", "stop", "a", "b"), "usage: kelder self stop [NAME]"),
+                               (("self", "list", "a"), "usage: kelder self list")):
+            rc, out = self.run_sc(*command)
+            self.assertEqual(rc, 1, out)
+            self.assertIn(usage, out)
+        rc, out = self.run_sc("self", "delete", "../fake")
+        self.assertEqual(rc, 1, out)
+        self.assertIn("not a machine name: ../fake", out)
+        self.assertTrue((self.tmp / "data/kelder/machines/fake").is_dir())
 
     def test_sigterm_still_cleans_up(self):
         first = self.hold_a_session(self.tmp / "never")

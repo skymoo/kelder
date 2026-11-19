@@ -7,10 +7,11 @@ session using it holds a shared lock on. A lock nobody holds means the
 sessions are gone and the directory can be detached. .lock serializes all of
 this between concurrent kelder runs.
 """
+import contextlib
 import fcntl
 import hashlib
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from pathlib import Path
 from typing import Protocol
 
@@ -28,6 +29,33 @@ def state_dir() -> Path:
 
 def _open(path: str | os.PathLike[str]) -> int:
     return os.open(path, os.O_WRONLY | os.O_CREAT, 0o666)
+
+
+@contextlib.contextmanager
+def locked() -> Generator[None, None, None]:
+    """Hold the machine's session lock: no session attaches or leaves meanwhile."""
+    state = state_dir()
+    state.mkdir(parents=True, exist_ok=True)
+    fd = _open(state / ".lock")
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)
+
+
+def used() -> list[str]:
+    """The directories sessions have attached to the machine and are still using."""
+    held = []
+    for path_file in sorted(state_dir().glob("*.path")):
+        fd = _open(path_file.with_suffix(".lock"))
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            held.append(path_file.read_text())
+        finally:
+            os.close(fd)
+    return held
 
 
 class Machine(Protocol):
