@@ -2,6 +2,42 @@
 
 All notable changes to kelder are documented in this file.
 
+## 0.0.6 - 2026-11-20
+
+This release replaces the backend: machines now run directly on
+QEMU/KVM, and smolvm is no longer used or supported. Upgrading from
+0.0.5 is not a drop-in change:
+
+- The host needs `qemu-system-x86_64`, `qemu-img`, `virtiofsd`, `ssh`,
+  `ssh-keygen` and one of `genisoimage`, `xorrisofs` or `mkisofs`
+  instead of smolvm (see Install in the README).
+- Existing smolvm machines are not converted. Run `kelder self setup`
+  once for each machine to create it again, from each project that
+  names a `vm` or lists `packages` in its `.kelder.toml`.
+- Claude's state (settings, memory, sessions) is kept outside the
+  machine and carries over unchanged.
+- kelder no longer touches the old smolvm machines; remove them with
+  smolvm once the new ones work.
+- `kelder self smoketest` now tests the host's QEMU, and its
+  `--release` option for trying a smolvm release is gone.
+
+### Added
+
+- Set project options in user config
+- Add a QEMU/KVM machine backend
+- Run self smoketest on QEMU machines
+- Add self list, stop and delete commands
+
+### Changed
+
+- Split settings out of smolvm.py
+- Route machine calls via machine.py
+- Remove the smolvm backend
+
+### Fixed
+
+- Stop the machine setup started
+
 ## 0.0.5 - 2026-11-18
 
 ### Added
