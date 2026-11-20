@@ -41,9 +41,12 @@ filter_unconventional = true
 tag_pattern = "v[0-9].*"
 sort_commits = "oldest"
 # Only what someone running kelder would notice; docs, chore, ci and
-# test commits are skipped.
+# test commits are skipped. Renovate commits updates to the packages
+# kelder is installed with as fix(deps), and to everything else (dev
+# tools, the build backend, CI actions, the lock file) as chore(deps).
 commit_parsers = [
     { message = "^feat", group = "Added" },
+    { message = "^fix\\(deps\\)", group = "Dependencies" },
     { message = "^fix", group = "Fixed" },
     { message = "^(refactor|perf)", group = "Changed" },
     { message = ".*", skip = true },
