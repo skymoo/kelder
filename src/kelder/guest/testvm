@@ -19,8 +19,20 @@ always starts clean. cloud-init installs a generated SSH key for root.
 A single CMD argument is run by the remote shell ('apt update && ...');
 several are quoted and run as one command (ls -l "a b").
 """
-import argparse, fcntl, hashlib, json, os, secrets, shlex, shutil, signal
-import socket, subprocess, sys, time, urllib.request
+import argparse
+import fcntl
+import hashlib
+import json
+import os
+import secrets
+import shlex
+import shutil
+import signal
+import socket
+import subprocess
+import sys
+import time
+import urllib.request
 from pathlib import Path
 
 IMAGES = {
@@ -191,7 +203,7 @@ def up(name, image, cpus, mem, disk, forwards):
             "-drive", f"if=virtio,file={d / 'seed.iso'},format=raw,readonly=on",
             "-netdev", ",".join(["user,id=n0", *fwd]), "-device", "virtio-net-pci,netdev=n0",
             "-device", "virtio-rng-pci", "-daemonize", "-pidfile", str(d / "qemu.pid"),
-        ], capture_output=True, text=True)
+        ], check=False, capture_output=True, text=True)
         if proc.returncode == 0:
             break
         if "hostfwd" not in proc.stderr or attempt == 2:
@@ -206,7 +218,7 @@ def up(name, image, cpus, mem, disk, forwards):
             raise Fail(f"VM {name!r} died while booting. Console:\n{console_tail(name)}")
         r = subprocess.run([*ssh_cmd(vm), "-o", "ConnectTimeout=3", "-o", "BatchMode=yes",
                             "cloud-init status --wait >/dev/null 2>&1; true"],
-                           stdin=subprocess.DEVNULL, capture_output=True)
+                           check=False, stdin=subprocess.DEVNULL, capture_output=True)
         if r.returncode == 0:
             return vm
         if time.monotonic() > deadline:
@@ -238,7 +250,7 @@ def cmd_run(a):
         vm = up(name, a.image, a.cpus, a.mem, a.disk, a.forward)
         cmd = a.cmd or ["bash", "-l"]
         tty = not a.cmd and sys.stdin.isatty()
-        return subprocess.run([*ssh_cmd(vm, tty), remote(cmd)]).returncode
+        return subprocess.run([*ssh_cmd(vm, tty), remote(cmd)], check=False).returncode
     finally:
         if a.keep:
             log(f"kept VM {name}; remove it with: testvm down {name}")
@@ -256,7 +268,8 @@ def cmd_ssh(a):
     if not qemu_pid(a.name):
         raise Fail(f"VM {a.name!r} is not running")
     tty = not a.cmd and sys.stdin.isatty()
-    return subprocess.run([*ssh_cmd(vm, tty), *([remote(a.cmd)] if a.cmd else [])]).returncode
+    return subprocess.run([*ssh_cmd(vm, tty), *([remote(a.cmd)] if a.cmd else [])],
+                          check=False).returncode
 
 
 def cmd_cp(a):
@@ -273,7 +286,7 @@ def cmd_cp(a):
             args.append(p)
     if port is None:
         raise Fail("no VM path given; write VM paths as NAME:PATH")
-    return subprocess.run(["scp", *SSH_OPTS, "-P", str(port), "-r", *args]).returncode
+    return subprocess.run(["scp", *SSH_OPTS, "-P", str(port), "-r", *args], check=False).returncode
 
 
 def cmd_down(a):

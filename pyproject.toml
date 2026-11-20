@@ -27,3 +27,17 @@ dev = [
 [build-system]
 requires = ["uv_build>=0.13.8,<0.14"]
 build-backend = "uv_build"
+
+[tool.ruff]
+# testvm has no .py extension, so ruff would pass it by.
+extend-include = [
+    "src/kelder/guest/testvm",
+]
+
+[tool.ty.src]
+# The same for ty, which is then told everything to check.
+include = [
+    "src",
+    "tests",
+    "src/kelder/guest/testvm",
+]
