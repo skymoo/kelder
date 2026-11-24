@@ -19,11 +19,21 @@ rust = "1.91"
   anyway, and a shim for a tool that isn't installed fails, or runs
   Debian's copy if there is one, rather than downloading it mid-session
   (`MISE_AUTO_INSTALL` and `MISE_NOT_FOUND_AUTO_INSTALL` are `false`).
-- Sessions have mise's shims (`~/.local/share/mise/shims`) first on
-  `PATH`. A shim picks the version from the directory it is run in, so
-  projects sharing a machine can ask for different versions, and
-  `command -v` finds a shim even where the tool isn't installed (`mise
-  which` tells).
+- The tools are installed in the project, not in the machine: setup and
+  sessions set `MISE_DATA_DIR` to `.mise-` followed by the machine's
+  name (`.mise-kelder` in the default machine) in the project's
+  directory, so projects sharing a machine share no tools. It holds a
+  `.gitignore` of its own, so git does not list it.
+- Rust's toolchains and Cargo's files, which rustup would keep in the
+  home directory, go there too (`MISE_RUSTUP_HOME` and
+  `MISE_CARGO_HOME` are `.mise-kelder/rustup` and `.mise-kelder/cargo`).
+- mise's cache, where it keeps what it downloads, is `/tmp/mise-cache`
+  (`MISE_CACHE_DIR`). `/tmp` is in the machine's memory and is emptied
+  when the machine stops, so no downloads stay on its disk either.
+- Sessions have the project's shims (`.mise-kelder/shims`) first on
+  `PATH`. A shim picks the version from the directory it is run in.
+  A session uses the data directory of the directory it was started
+  in, so a tool only an extra directory's config lists is not found.
 - The directories a session attaches are trusted
   (`MISE_TRUSTED_CONFIG_PATHS`), so a config with `[env]` or templates
   works without `mise trust`.

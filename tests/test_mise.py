@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from kelder import machine, mise
+from kelder import machine, mise, settings
 
 
 class Mise(unittest.TestCase):
@@ -24,7 +24,8 @@ class Mise(unittest.TestCase):
     def missing(self, rc, out):
         with mock.patch.object(machine, "guest", return_value=(rc, out)) as guest:
             result = mise.missing("/proj")
-        guest.assert_called_once_with("bash", "-c", mise.MISSING, "_", "/proj", capture="out")
+        guest.assert_called_once_with("bash", "-c", mise.MISSING, "_", "/proj",
+                                      f"/proj/.mise-{settings.VM}", capture="out")
         return result
 
     def test_missing_tools_are_named_with_their_versions(self):

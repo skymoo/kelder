@@ -123,7 +123,7 @@ class Provision(unittest.TestCase):
         self.assertLess(out.index(f"Installing the tools listed in {proj}'s mise config..."),
                         out.index("Setup done."))
         commands = self.guest_commands()
-        install = commands.index(["bash", "-c", mise.INSTALL, "_", proj])
+        install = commands.index(["bash", "-c", mise.INSTALL, "_", proj, f"{proj}/.mise-{settings.VM}"])
         attach = next(i for i, c in enumerate(commands) if c[-1] == proj and "mount -t virtiofs" in c[-3])
         detach = next(i for i, c in enumerate(commands) if c[-2:] == ["umount", proj])
         self.assertLess(attach, install)

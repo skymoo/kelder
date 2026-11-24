@@ -88,11 +88,11 @@ Environment:
 COMMANDS = ("delete", "help", "list", "setup", "smoketest", "stop", "version")
 
 # What runs in the guest. It gets the primary directory, the state directory,
-# the name of uv's project environment, the number of extra directories, the
+# the machine's name, the number of extra directories, the
 # extra directories, then claude's arguments. GUEST_ENV and mise.GUEST_ENV set
 # the session up; GUEST_CLAUDE or GUEST_SHELL follows them and starts what the session runs.
 GUEST_ENV = """
-dir=$1 state=$2 venv=$3 n=$4; shift 4
+dir=$1 state=$2 vm=$3 n=$4; shift 4
 extra=("${@:1:n}"); shift "$n"
 for d in "$dir" "${extra[@]}"; do
   mountpoint -q "$d" || { echo "kelder: $d is not attached in the guest" >&2; exit 1; }
@@ -113,7 +113,7 @@ fi
 # Python. Give uv in the guest an environment of its own in each project,
 # named after the machine: one built in another machine points at that
 # machine's Python.
-export UV_PROJECT_ENVIRONMENT=$venv
+export UV_PROJECT_ENVIRONMENT=.venv-$vm
 # uv's cache is on the guest's disk and the environment is in the attached
 # directory, so it can never hard-link between them; copy without warning.
 export UV_LINK_MODE=copy
@@ -132,7 +132,7 @@ exec claude "${extra[@]/#/--add-dir=}" "$@"
 # the rc file given here puts them back afterwards.
 GUEST_SHELL = """
 exec bash --rcfile <(printf '%s\\n' '. /etc/profile' '[[ -f ~/.bashrc ]] && . ~/.bashrc' \\
-  'export PATH="$HOME/.local/share/mise/shims:$HOME/.local/bin:$PATH"') -i
+  'export PATH="$MISE_DATA_DIR/shims:$HOME/.local/bin:$PATH"') -i
 """
 
 # Prints each of the packages given that isn't installed in the guest.
@@ -240,7 +240,7 @@ def _terminate(signum: int, _frame: FrameType | None) -> NoReturn:
 
 
 def note_missing(cfg: config.Config, project: str) -> None:
-    """Say which of the project's packages and mise tools the machine lacks; setup installs them."""
+    """Say which of the project's packages and mise tools are not installed; setup installs them."""
     if cfg.packages:
         missing = machine.guest("bash", "-c", MISSING_PACKAGES, "_", *cfg.packages, capture="out")[1].split()
         if missing:
@@ -252,8 +252,8 @@ def note_missing(cfg: config.Config, project: str) -> None:
             note(f"machine '{settings.VM}' lacks mise, which installs the tools listed in {project}'s "
                  "mise config; run 'kelder self setup' to install it")
         elif tools:
-            note(f"machine '{settings.VM}' lacks tools listed in {project}'s mise config: "
-                 f"{' '.join(tools)}; run 'kelder self setup' to install them")
+            note(f"tools listed in {project}'s mise config are not installed for machine "
+                 f"'{settings.VM}': {' '.join(tools)}; run 'kelder self setup' to install them")
 
 
 def run_claude(primary: str, extra: list[str], claude_args: list[str],
@@ -301,7 +301,7 @@ def run_claude(primary: str, extra: list[str], claude_args: list[str],
         tty = sys.stdin.isatty() and sys.stdout.isatty()
         script = GUEST_ENV + mise.GUEST_ENV + (GUEST_SHELL if shell else GUEST_CLAUDE)
         cmd = ["bash", "-c", script, "_", dirs[0], settings.GUEST_CLAUDE_STATE,
-               f".venv-{settings.VM}", str(len(dirs) - 1), *dirs[1:], *claude_args]
+               settings.VM, str(len(dirs) - 1), *dirs[1:], *claude_args]
         if settings.DRY_RUN:
             return machine.session(tty, cmd)
         started = time.time() - 2   # allow for coarse file timestamps

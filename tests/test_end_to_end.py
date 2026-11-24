@@ -123,7 +123,11 @@ class EndToEnd(unittest.TestCase):
         self.assertIn("ANTHROPIC_AUTH_TOKEN=unset", out)
         self.assertIn("UV_PROJECT_ENVIRONMENT=.venv-fake", out)
         self.assertIn("UV_LINK_MODE=copy", out)
-        self.assertIn(f"PATH={self.tmp}/home/.local/share/mise/shims:{self.tmp}/home/.local/bin:", out)
+        self.assertIn(f"PATH={self.tmp}/proj/.mise-fake/shims:{self.tmp}/home/.local/bin:", out)
+        self.assertIn(f"MISE_DATA_DIR={self.tmp}/proj/.mise-fake", out)
+        self.assertIn(f"MISE_RUSTUP_HOME={self.tmp}/proj/.mise-fake/rustup", out)
+        self.assertIn(f"MISE_CARGO_HOME={self.tmp}/proj/.mise-fake/cargo", out)
+        self.assertIn("MISE_CACHE_DIR=/tmp/mise-cache", out)
         self.assertIn("MISE_AUTO_INSTALL=false", out)
         self.assertIn("MISE_NOT_FOUND_AUTO_INSTALL=false", out)
         self.assertIn(f"MISE_TRUSTED_CONFIG_PATHS={self.tmp}/proj:{self.tmp}/extra", out)
@@ -207,7 +211,7 @@ class EndToEnd(unittest.TestCase):
                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         self.assertEqual(p.returncode, 0, p.stdout)
         self.assertIn(f"cwd={self.tmp}/extra", p.stdout)
-        self.assertIn(f"PATH={self.tmp}/home/.local/share/mise/shims:{self.tmp}/home/.local/bin:",
+        self.assertIn(f"PATH={self.tmp}/extra/.mise-fake/shims:{self.tmp}/home/.local/bin:",
                       p.stdout)
         self.assertIn("UV=.venv-fake", p.stdout)
         self.assertIn(f"CONFIG={self.tmp}/state", p.stdout)
@@ -266,15 +270,16 @@ class EndToEnd(unittest.TestCase):
     def test_missing_mise_tools_are_reported_not_installed(self):
         (self.tmp / "proj/mise.toml").write_text('[tools]\njq = "1.7.1"\nzig = "0.15"\n')
         (self.tmp / "bin/mise").write_text(
-            '#!/bin/sh\necho "$PWD $MISE_TRUSTED_CONFIG_PATHS $*" >"$HOME/mise-call"\n'
+            '#!/bin/sh\necho "$PWD $MISE_TRUSTED_CONFIG_PATHS $MISE_DATA_DIR $*" >"$HOME/mise-call"\n'
             f'echo "zig  0.15 (missing)  {self.tmp}/proj/mise.toml  0.15"\n')
         (self.tmp / "bin/mise").chmod(0o755)
         rc, out = self.run_sc("hello")
         self.assertEqual(rc, 0, out)
-        self.assertIn(f"machine 'fake' lacks tools listed in {self.tmp}/proj's mise config: zig@0.15; "
-                      "run 'kelder self setup' to install them", out)
+        self.assertIn(f"tools listed in {self.tmp}/proj's mise config are not installed for machine "
+                      "'fake': zig@0.15; run 'kelder self setup' to install them", out)
         self.assertEqual((self.tmp / "home/mise-call").read_text(),
-                         f"{self.tmp}/proj {self.tmp}/proj ls --missing --current --no-header\n")
+                         f"{self.tmp}/proj {self.tmp}/proj {self.tmp}/proj/.mise-fake "
+                         "ls --missing --current --no-header\n")
 
     def test_a_project_without_a_mise_config_is_not_checked(self):
         rc, out = self.run_sc("hello")
