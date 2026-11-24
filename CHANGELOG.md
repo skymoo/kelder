@@ -2,6 +2,21 @@
 
 All notable changes to kelder are documented in this file.
 
+## 0.0.7 - 2026-11-24
+
+Tools from a project's mise config are now installed in the project,
+in `.mise-<machine>`, instead of in the machine. After upgrading from
+0.0.6:
+
+- Run `kelder self setup` once from each project with a mise config,
+  to install its tools in the project.
+- Tools installed by 0.0.6 stay in the machine's home directory,
+  unused. Deleting and recreating the machine removes them.
+
+### Added
+
+- Install mise tools in the project
+
 ## 0.0.6 - 2026-11-20
 
 This release replaces the backend: machines now run directly on
